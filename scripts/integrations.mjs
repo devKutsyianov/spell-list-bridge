@@ -33,42 +33,45 @@ export async function getPlutoniumSpellLookup() {
 }
 
 /**
- * Ensure the given page UUIDs are present in Spell Book's `registryEnabledLists`
- * world setting (its per-list "registry toggle"), so Spell Book re-registers them
- * with the dnd5e registry on every reload. No-op when Spell Book is absent.
- * @param {string[]} uuids  Journal page UUIDs to enable.
+ * Append UUIDs to one of Spell Book's array-of-uuids world settings, skipping
+ * ones already present. No-op when Spell Book is absent.
+ * @param {string} settingKey  Spell Book setting key holding an array of UUIDs.
+ * @param {string[]} uuids     UUIDs to append.
  * @returns {Promise<number>} Number of UUIDs newly added.
  */
-export async function ensureSpellBookRegistryToggle(uuids) {
+async function appendToSpellBookListSetting(settingKey, uuids) {
   if (!isSpellBookActive() || !uuids.length) return 0;
   try {
-    const enabled = game.settings.get(SPELLBOOK_ID, SB.SETTING_REGISTRY_ENABLED) ?? [];
-    const missing = uuids.filter(u => !enabled.includes(u));
-    if (missing.length) await game.settings.set(SPELLBOOK_ID, SB.SETTING_REGISTRY_ENABLED, [...enabled, ...missing]);
+    const stored = game.settings.get(SPELLBOOK_ID, settingKey) ?? [];
+    const existing = Array.isArray(stored) ? stored : [];
+    const missing = uuids.filter(u => !existing.includes(u));
+    if (missing.length) await game.settings.set(SPELLBOOK_ID, settingKey, [...existing, ...missing]);
     return missing.length;
   } catch (err) {
-    log("Could not update Spell Book registryEnabledLists", err);
+    log(`Could not update Spell Book ${settingKey}`, err);
     return 0;
   }
 }
 
 /**
+ * Ensure the given page UUIDs are present in Spell Book's `registryEnabledLists`
+ * world setting (its per-list "registry toggle"), so Spell Book re-registers them
+ * with the dnd5e registry on every reload.
+ * @param {string[]} uuids  Journal page UUIDs to enable.
+ * @returns {Promise<number>} Number of UUIDs newly added.
+ */
+export function ensureSpellBookRegistryToggle(uuids) {
+  return appendToSpellBookListSetting(SB.SETTING_REGISTRY_ENABLED, uuids);
+}
+
+/**
  * Add source-list page UUIDs to Spell Book's `hiddenSpellLists` setting so the
- * originals stop cluttering its pickers after a merge. No-op without Spell Book.
+ * originals stop cluttering its pickers after a merge.
  * @param {string[]} uuids  Page UUIDs of source lists to hide.
  * @returns {Promise<number>} Number of UUIDs newly hidden.
  */
-export async function hideSourceListsInSpellBook(uuids) {
-  if (!isSpellBookActive() || !uuids.length) return 0;
-  try {
-    const hidden = game.settings.get(SPELLBOOK_ID, SB.SETTING_HIDDEN_LISTS) ?? [];
-    const missing = uuids.filter(u => !hidden.includes(u));
-    if (missing.length) await game.settings.set(SPELLBOOK_ID, SB.SETTING_HIDDEN_LISTS, [...hidden, ...missing]);
-    return missing.length;
-  } catch (err) {
-    log("Could not update Spell Book hiddenSpellLists", err);
-    return 0;
-  }
+export function hideSourceListsInSpellBook(uuids) {
+  return appendToSpellBookListSetting(SB.SETTING_HIDDEN_LISTS, uuids);
 }
 
 /**

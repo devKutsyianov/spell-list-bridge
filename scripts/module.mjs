@@ -1,7 +1,7 @@
 /** @file Entry point: init/ready wiring. */
 
 import { createApi } from "./api.mjs";
-import { MODULE_ID, PACK_ID, SETTINGS } from "./constants.mjs";
+import { MODULE_ID, SETTINGS } from "./constants.mjs";
 import { registerGeneratedLists } from "./reconcile.mjs";
 import { registerSettings } from "./settings.mjs";
 import { manualReconcile, registerTriggers } from "./triggers.mjs";
@@ -20,12 +20,9 @@ Hooks.once("ready", async () => {
   const count = await registerGeneratedLists();
   if (count) log(`Registered ${count} generated spell list page(s) with the dnd5e registry`);
 
-  if (game.user.isGM) {
-    const pack = game.packs.get(PACK_ID);
-    if (pack?.locked) await pack.configure({ locked: false });
-    if (game.settings.get(MODULE_ID, SETTINGS.RECONCILE_ON_READY)) {
-      log("Reconcile-on-ready is enabled — opening preview");
-      manualReconcile();
-    }
+  // The pack is unlocked lazily by applyPlan when a write actually happens.
+  if (game.user.isGM && game.settings.get(MODULE_ID, SETTINGS.RECONCILE_ON_READY)) {
+    log("Reconcile-on-ready is enabled — opening preview");
+    manualReconcile();
   }
 });

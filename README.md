@@ -130,6 +130,19 @@ with `api.exportReport()` when filing issues.
 6. **Idempotency**: run Sync again immediately — every action should read
    **Unchanged**.
 
+## Known limitations
+
+- **Auto-sync trigger scope**: compendium imports fire hooks only on the client
+  that ran the import, so that client must be a GM for auto-sync to trigger;
+  world/actor changes trigger on the active GM's client.
+- **Spell Book rules cache**: Spell Book caches per-actor class rules in memory
+  for the session. If a client read an actor's rules *before* a sync assigned a
+  list (e.g. the Spell Book was open), that client may not see the assignment
+  until reload — Spell Book exposes no cache-invalidation API.
+- **dnd5e registry is additive-only**: spells removed from a generated page
+  (reported as *stale*, never auto-deleted) stay in the in-memory registry until
+  the next world reload.
+
 ## Files
 
 - `NOTES.md` — Step-0 investigation of the installed dnd5e/Spell Book/Plutonium

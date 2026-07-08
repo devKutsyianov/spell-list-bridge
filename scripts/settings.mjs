@@ -37,7 +37,8 @@ export class SourcePacksConfig extends HandlebarsApplicationMixin(ApplicationV2)
 
   /**
    * Persist selection. An all-checked selection is stored as [] (= "all packs",
-   * so newly added packs are included automatically).
+   * so newly added packs are included automatically). An empty selection is
+   * rejected — [] would silently invert into "all packs" (getSourcePacks).
    * @this {SourcePacksConfig}
    * @param {SubmitEvent} _event
    * @param {HTMLFormElement} form
@@ -45,6 +46,10 @@ export class SourcePacksConfig extends HandlebarsApplicationMixin(ApplicationV2)
   static async #onSubmit(_event, form) {
     const boxes = [...form.querySelectorAll("input[type=checkbox][name=pack]")];
     const chosen = boxes.filter(b => b.checked).map(b => b.value);
+    if (!chosen.length) {
+      ui.notifications.warn(game.i18n.localize(`${MODULE_ID}.notify.noPacksSelected`));
+      return;
+    }
     const value = chosen.length === boxes.length ? [] : chosen;
     await game.settings.set(MODULE_ID, SETTINGS.SOURCE_PACKS, value);
   }

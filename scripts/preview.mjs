@@ -20,6 +20,9 @@ export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) 
     this.plan = plan;
   }
 
+  /** Guard against double-submits while a (long) apply is running. */
+  #applying = false;
+
   /** @override */
   static DEFAULT_OPTIONS = {
     id: "slb-reconcile-preview",
@@ -67,26 +70,33 @@ export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) 
    * @param {HTMLFormElement} form
    */
   static async #onApply(_event, form) {
-    const dryRun = form.elements.dryRun?.checked ?? false;
-    let bar;
+    if (this.#applying) return;
+    this.#applying = true;
     try {
-      bar = ui.notifications.info(game.i18n.localize(`${MODULE_ID}.notify.applying`), { progress: true });
-    } catch {
-      bar = null;
+      const dryRun = form.elements.dryRun?.checked ?? false;
+      let bar;
+      try {
+        bar = ui.notifications.info(game.i18n.localize(`${MODULE_ID}.notify.applying`), { progress: true });
+      } catch {
+        bar = null;
+      }
+      const report = await applyPlan(this.plan, {
+        dryRun,
+        onProgress: (done, total, label) => bar?.update?.({ pct: total ? done / total : 1, message: label })
+      });
+      bar?.update?.({ pct: 1 });
+      log("Report", report);
+      if (report.ok === false) return; // applyPlan already surfaced the failure.
+      const key = dryRun ? "notify.dryRunDone" : "notify.applied";
+      ui.notifications.info(
+        game.i18n.format(`${MODULE_ID}.${key}`, {
+          created: report.created.length,
+          updated: report.updated.length
+        })
+      );
+    } finally {
+      this.#applying = false;
     }
-    const report = await applyPlan(this.plan, {
-      dryRun,
-      onProgress: (done, total, label) => bar?.update?.({ pct: total ? done / total : 1, message: label })
-    });
-    bar?.update?.({ pct: 1 });
-    const key = dryRun ? "notify.dryRunDone" : "notify.applied";
-    ui.notifications.info(
-      game.i18n.format(`${MODULE_ID}.${key}`, {
-        created: report.created.length,
-        updated: report.updated.length
-      })
-    );
-    log("Report", report);
   }
 
   /**

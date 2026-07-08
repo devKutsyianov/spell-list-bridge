@@ -14,8 +14,16 @@ import { log, toIdentifier } from "./util.mjs";
  * @property {string[]} warnings  Human-readable warnings
  */
 
-/** Index fields needed from source packs. */
-const INDEX_FIELDS = ["type", "name", "system.identifier", "system.level", `flags.${PLUTONIUM_ID}`];
+/**
+ * @typedef {object} SourcePackScan
+ * @property {CompendiumCollection[]} packs  Packs that were scanned
+ * @property {{uuid: string, name: string, plutonium: object|undefined}[]} spells
+ * @property {{identifier: string, name: string, progression: string}[]} classes
+ * @property {Map<string, string[]>} byName  lowercase spell name → uuids
+ */
+
+/** Index fields for the single source-pack scan (spells + classes in one pass). */
+const INDEX_FIELDS = ["type", "name", "system.identifier", "system.spellcasting.progression", `flags.${PLUTONIUM_ID}`];
 
 /**
  * Get the configured source packs (Item compendiums scanned for spells).
@@ -27,6 +35,41 @@ export function getSourcePacks() {
   const all = game.packs.filter(p => p.metadata.type === "Item");
   if (!configured.length) return all;
   return all.filter(p => configured.includes(p.collection));
+}
+
+/**
+ * Index every source pack exactly once, collecting spell and class entries
+ * together. Callers that need both (planReconcile) share one scan instead of
+ * indexing each pack twice.
+ * @returns {Promise<SourcePackScan>} The scan result.
+ */
+export async function scanSourcePacks() {
+  /** @type {SourcePackScan} */
+  const scan = { packs: getSourcePacks(), spells: [], classes: [], byName: new Map() };
+  for (const pack of scan.packs) {
+    let packIndex;
+    try {
+      packIndex = await pack.getIndex({ fields: INDEX_FIELDS });
+    } catch (err) {
+      log(`Could not index pack ${pack.collection}`, err);
+      continue;
+    }
+    for (const entry of packIndex) {
+      if (entry.type === "spell") {
+        scan.spells.push({ uuid: entry.uuid, name: entry.name, plutonium: entry.flags?.[PLUTONIUM_ID] });
+        const key = entry.name.toLowerCase();
+        if (!scan.byName.has(key)) scan.byName.set(key, []);
+        scan.byName.get(key).push(entry.uuid);
+      } else if (entry.type === "class") {
+        scan.classes.push({
+          identifier: entry.system?.identifier || toIdentifier(entry.name),
+          name: entry.name,
+          progression: entry.system?.spellcasting?.progression ?? "none"
+        });
+      }
+    }
+  }
+  return scan;
 }
 
 /**
@@ -46,12 +89,32 @@ export async function loadOverrides() {
 }
 
 /**
+ * Original 5etools name from a Plutonium hash ("fire%20bolt_phb" → "fire bolt"),
+ * for spells renamed at import time or edited afterwards.
+ * @param {string} hash  Value of `flags.plutonium.hash`.
+ * @returns {string|null} Lowercased original name, or null when underivable.
+ */
+function nameFromHash(hash) {
+  if (typeof hash !== "string" || !hash) return null;
+  try {
+    const decoded = decodeURIComponent(hash);
+    const cut = decoded.lastIndexOf("_");
+    return cut > 0 ? decoded.slice(0, cut).toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Build the full membership index from all sources, in priority order:
  * 1. override JSON, 2. Plutonium flags (`spellClassNames` / lookup), 3. left to
  * the caller (existing registered lists are merged during planning).
+ * @param {object} [options]
+ * @param {object} [options.overrides]      Preloaded override mapping (avoids a second fetch).
+ * @param {SourcePackScan} [options.scan]   Preloaded source-pack scan (avoids re-indexing).
  * @returns {Promise<MembershipIndex>} The resolved index.
  */
-export async function buildMembershipIndex() {
+export async function buildMembershipIndex({ overrides, scan } = {}) {
   /** @type {MembershipIndex} */
   const index = {
     classes: new Map(),
@@ -62,33 +125,9 @@ export async function buildMembershipIndex() {
     warnings: []
   };
 
-  const packs = getSourcePacks();
+  scan ??= await scanSourcePacks();
+  overrides ??= await loadOverrides();
   const lookup = await getPlutoniumSpellLookup();
-  const overrides = await loadOverrides();
-
-  // Collect spell index entries across all source packs.
-  /** @type {{uuid: string, name: string, plutonium: object|undefined}[]} */
-  const spellEntries = [];
-  /** @type {Map<string, string[]>} lowercase name → uuids (for override name resolution) */
-  const byName = new Map();
-
-  for (const pack of packs) {
-    let packIndex;
-    try {
-      packIndex = await pack.getIndex({ fields: INDEX_FIELDS });
-    } catch (err) {
-      log(`Could not index pack ${pack.collection}`, err);
-      continue;
-    }
-    for (const entry of packIndex) {
-      if (entry.type !== "spell") continue;
-      const record = { uuid: entry.uuid, name: entry.name, plutonium: entry.flags?.[PLUTONIUM_ID] };
-      spellEntries.push(record);
-      const key = entry.name.toLowerCase();
-      if (!byName.has(key)) byName.set(key, []);
-      byName.get(key).push(entry.uuid);
-    }
-  }
 
   const addClass = (identifier, uuid) => {
     if (!index.classes.has(identifier)) index.classes.set(identifier, new Set());
@@ -102,7 +141,7 @@ export async function buildMembershipIndex() {
   };
 
   // 2. Plutonium-derived membership (flags first, lookup fallback).
-  for (const spell of spellEntries) {
+  for (const spell of scan.spells) {
     const flags = spell.plutonium;
     if (!flags) continue;
     let mapped = false;
@@ -112,7 +151,10 @@ export async function buildMembershipIndex() {
       mapped = true;
     }
 
-    const lookupEntry = lookup?.[String(flags.source ?? "").toLowerCase()]?.[spell.name.toLowerCase()];
+    // Current display name first; the hash-derived original name covers spells
+    // renamed at import (Plutonium source-suffix options) or edited by the GM.
+    const bySrc = lookup?.[String(flags.source ?? "").toLowerCase()];
+    const lookupEntry = bySrc?.[spell.name.toLowerCase()] ?? bySrc?.[nameFromHash(flags.hash)];
     if (lookupEntry) {
       // `class` = base list membership; `classVariant` = expanded-list membership
       // (XGE/TCE style). Both are keyed classSource → className; only the leaf
@@ -142,17 +184,17 @@ export async function buildMembershipIndex() {
   }
 
   // 1. Overrides — authoritative, applied last so they always land, and reported when unresolved.
+  // Name resolution runs first so spell names containing "." are not mistaken for UUIDs.
   const resolveRef = ref => {
     if (typeof ref !== "string" || !ref) return [];
     if (ref.startsWith("uuid://")) ref = ref.slice("uuid://".length);
-    if (ref.includes(".")) {
-      try {
-        return foundry.utils.parseUuid(ref)?.documentId ? [ref] : [];
-      } catch {
-        return [];
-      }
+    const named = scan.byName.get(ref.toLowerCase());
+    if (named?.length) return named;
+    try {
+      return foundry.utils.parseUuid(ref)?.documentId ? [ref] : [];
+    } catch {
+      return [];
     }
-    return byName.get(ref.toLowerCase()) ?? [];
   };
 
   for (const [classId, config] of Object.entries(overrides)) {
@@ -170,8 +212,8 @@ export async function buildMembershipIndex() {
     }
   }
 
-  if (!packs.length) index.warnings.push(game.i18n.localize(`${MODULE_ID}.notify.noSourcePacks`));
-  if (!lookup && spellEntries.some(s => s.plutonium && !s.plutonium.spellClassNames)) {
+  if (!scan.packs.length) index.warnings.push(game.i18n.localize(`${MODULE_ID}.notify.noSourcePacks`));
+  if (!lookup && scan.spells.some(s => s.plutonium && !s.plutonium.spellClassNames)) {
     index.warnings.push(game.i18n.localize(`${MODULE_ID}.notify.noLookup`));
   }
 
@@ -190,9 +232,15 @@ export async function buildMembershipIndex() {
  * Collect target classes: embedded classes on world actors, class items in
  * source packs, and override JSON keys. Identifiers are always read from the
  * actual Class item when one exists.
+ * @param {object} [options]
+ * @param {object} [options.overrides]      Preloaded override mapping (avoids a second fetch).
+ * @param {SourcePackScan} [options.scan]   Preloaded source-pack scan (avoids re-indexing).
  * @returns {Promise<Map<string, TargetClass>>} identifier → target descriptor.
  */
-export async function collectTargetClasses() {
+export async function collectTargetClasses({ overrides, scan } = {}) {
+  scan ??= await scanSourcePacks();
+  overrides ??= await loadOverrides();
+
   /** @type {Map<string, TargetClass>} */
   const targets = new Map();
   const put = (identifier, name, progression, fromOverride = false) => {
@@ -212,21 +260,8 @@ export async function collectTargetClasses() {
     }
   }
 
-  for (const pack of getSourcePacks()) {
-    let packIndex;
-    try {
-      packIndex = await pack.getIndex({ fields: ["type", "name", "system.identifier", "system.spellcasting.progression"] });
-    } catch {
-      continue;
-    }
-    for (const entry of packIndex) {
-      if (entry.type !== "class") continue;
-      const identifier = entry.system?.identifier || toIdentifier(entry.name);
-      put(identifier, entry.name, entry.system?.spellcasting?.progression ?? "none");
-    }
-  }
+  for (const cls of scan.classes) put(cls.identifier, cls.name, cls.progression);
 
-  const overrides = await loadOverrides();
   for (const classId of Object.keys(overrides)) {
     put(classId, classId.titleCase?.() ?? classId, "none", true);
   }
