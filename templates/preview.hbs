@@ -1,0 +1,61 @@
+<section class="slb-preview-body">
+  <p class="hint">
+    {{localize "spell-list-bridge.preview.summary" changed=changed unchanged=unchanged}}
+  </p>
+
+  <div class="slb-table-wrap">
+    <table class="slb-actions">
+      <thead>
+        <tr>
+          <th>{{localize "spell-list-bridge.preview.colList"}}</th>
+          <th>{{localize "spell-list-bridge.preview.colType"}}</th>
+          <th>{{localize "spell-list-bridge.preview.colAction"}}</th>
+          <th class="num">{{localize "spell-list-bridge.preview.colAdded"}}</th>
+          <th class="num">{{localize "spell-list-bridge.preview.colTotal"}}</th>
+          <th class="num">{{localize "spell-list-bridge.preview.colStale"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each rows}}
+        <tr class="kind-{{kind}}">
+          <td>{{name}} <code>{{identifier}}</code></td>
+          <td>{{#if isSubclass}}{{localize "TYPES.Item.subclass"}}{{else}}{{localize "TYPES.Item.class"}}{{/if}}</td>
+          <td>{{kindLabel}}</td>
+          <td class="num">{{addedCount}}</td>
+          <td class="num">{{total}}</td>
+          <td class="num">{{staleCount}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  {{#if skipped.length}}
+  <details>
+    <summary>{{localize "spell-list-bridge.preview.skipped"}} ({{skipped.length}})</summary>
+    <ul>{{#each skipped}}<li>{{this}}</li>{{/each}}</ul>
+  </details>
+  {{/if}}
+
+  {{#if unmapped.length}}
+  <details>
+    <summary>{{localize "spell-list-bridge.preview.unmapped"}} ({{unmapped.length}})</summary>
+    <ul class="slb-unmapped">
+      {{#each unmapped}}<li>{{name}} <code>{{source}}</code></li>{{/each}}
+    </ul>
+  </details>
+  {{/if}}
+
+  {{#if unresolvedOverrides.length}}
+  <details>
+    <summary>{{localize "spell-list-bridge.preview.unresolved"}} ({{unresolvedOverrides.length}})</summary>
+    <ul>{{#each unresolvedOverrides}}<li><code>{{this}}</code></li>{{/each}}</ul>
+  </details>
+  {{/if}}
+
+  {{#if warnings.length}}
+  <div class="slb-warnings">
+    {{#each warnings}}<p class="notification warning">{{this}}</p>{{/each}}
+  </div>
+  {{/if}}
+</section>

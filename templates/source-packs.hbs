@@ -1,0 +1,14 @@
+<section class="slb-source-packs">
+  <p class="hint">{{localize "spell-list-bridge.settings.sourcePacks.hint"}}</p>
+  <div class="slb-pack-list">
+    {{#each packs}}
+    <label class="checkbox">
+      <input type="checkbox" name="pack" value="{{id}}" {{#if checked}}checked{{/if}}>
+      {{label}}
+    </label>
+    {{/each}}
+  </div>
+  <footer class="form-footer">
+    <button type="submit"><i class="fa-solid fa-save"></i> {{localize "Save Changes"}}</button>
+  </footer>
+</section>

@@ -1,0 +1,3 @@
+# Compendium LevelDB contents are runtime world data, not source.
+# Foundry recreates the pack directory automatically on launch.
+packs/

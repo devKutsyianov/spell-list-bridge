@@ -1,0 +1,62 @@
+{
+  "id": "spell-list-bridge",
+  "title": "Spell List Bridge (Plutonium → Spell Book)",
+  "description": "Automatically generates and registers dnd5e class/subclass spell-list journal pages from Plutonium-imported spells, so Spell Book and the native dnd5e class filters recognize them. Idempotent, non-destructive, homebrew-aware.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "uniks"
+    }
+  ],
+  "compatibility": {
+    "minimum": "13",
+    "verified": "14"
+  },
+  "esmodules": ["scripts/module.mjs"],
+  "styles": ["styles/bridge.css"],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    }
+  ],
+  "packs": [
+    {
+      "name": "generated-spell-lists",
+      "label": "Generated Spell Lists",
+      "path": "packs/generated-spell-lists",
+      "type": "JournalEntry",
+      "system": "dnd5e",
+      "ownership": {
+        "PLAYER": "OBSERVER",
+        "TRUSTED": "OBSERVER",
+        "ASSISTANT": "OWNER"
+      }
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "type": "system",
+        "compatibility": {
+          "minimum": "5.3.0",
+          "verified": "5.3.3"
+        }
+      }
+    ],
+    "optional": [
+      {
+        "id": "plutonium",
+        "type": "module",
+        "reason": "Source of imported spells and 5etools class-membership metadata."
+      },
+      {
+        "id": "spell-book",
+        "type": "module",
+        "reason": "Consumer of the generated spell lists (per-class tabs, registry toggle)."
+      }
+    ]
+  }
+}

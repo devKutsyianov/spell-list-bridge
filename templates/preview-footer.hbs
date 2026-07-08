@@ -1,0 +1,12 @@
+<footer class="form-footer slb-preview-footer">
+  <label class="checkbox">
+    <input type="checkbox" name="dryRun" {{#if dryRunDefault}}checked{{/if}}>
+    {{localize "spell-list-bridge.preview.dryRun"}}
+  </label>
+  <button type="button" data-action="export">
+    <i class="fa-solid fa-file-export"></i> {{localize "spell-list-bridge.preview.export"}}
+  </button>
+  <button type="submit">
+    <i class="fa-solid fa-check"></i> {{localize "spell-list-bridge.preview.apply"}}
+  </button>
+</footer>

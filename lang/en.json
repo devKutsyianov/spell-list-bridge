@@ -1,0 +1,86 @@
+{
+  "spell-list-bridge": {
+    "ui": {
+      "syncButton": "Sync Spell Lists"
+    },
+    "page": {
+      "description": "Auto-generated spell list for {name}. Maintained by Spell List Bridge — manual additions are preserved (reconcile is additive), but prefer the override JSON for permanent homebrew mappings."
+    },
+    "plan": {
+      "skippedPsi": "Skipped {name} ({identifier}): its override resolved to no spell items. If this is a psi-point / discipline class whose powers are features, it has no spell list — this is expected.",
+      "skippedEmpty": "Skipped {name} ({identifier}): spellcasting class, but no spell membership could be derived from Plutonium data, overrides, or existing lists."
+    },
+    "preview": {
+      "title": "Sync Spell Lists — Preview",
+      "summary": "{changed} list(s) will be created or updated; {unchanged} unchanged.",
+      "colList": "Spell List",
+      "colType": "Type",
+      "colAction": "Action",
+      "colAdded": "Adding",
+      "colTotal": "Total",
+      "colStale": "Stale",
+      "kind": {
+        "create": "Create",
+        "update": "Update (merge)",
+        "unchanged": "Unchanged"
+      },
+      "skipped": "Skipped classes",
+      "unmapped": "Unmapped spells (Plutonium-imported, no class found)",
+      "unresolved": "Unresolved override entries",
+      "dryRun": "Dry run (report only, no writes)",
+      "apply": "Apply",
+      "export": "Export plan JSON"
+    },
+    "settings": {
+      "sourcePacks": {
+        "name": "Source Compendiums",
+        "label": "Configure Source Compendiums",
+        "hint": "Item compendiums scanned for spells and classes. All Item packs are used when nothing is selected."
+      },
+      "autoTrigger": {
+        "name": "Auto-sync after imports and level-ups",
+        "hint": "Watch for Plutonium spell/class imports and dnd5e advancement completion, then reconcile the affected classes automatically (debounced)."
+      },
+      "reconcileOnReady": {
+        "name": "Open sync preview at world start",
+        "hint": "Opt-in: run a full reconcile plan when the world loads and show the preview dialog (GM only)."
+      },
+      "assignToActors": {
+        "name": "Assign generated lists to actors (Spell Book)",
+        "hint": "After a sync, fill each actor's empty Spell Book class-rules spell list with the generated page. Existing assignments are never overwritten."
+      },
+      "autoHideSourceLists": {
+        "name": "Hide source lists in Spell Book after merge",
+        "hint": "Add merged source pages to Spell Book's hidden-lists setting so its pickers only show the comprehensive generated lists."
+      },
+      "overridePath": {
+        "name": "Override mapping JSON path",
+        "hint": "Path (relative to the Data folder) to a JSON file mapping homebrew classes to spells, e.g. worlds/my-world/spell-overrides.json. See README for the format."
+      },
+      "batchSize": {
+        "name": "Write batch size",
+        "hint": "Journal pages created/updated per database call. Lower this if large syncs cause problems."
+      },
+      "dryRun": {
+        "name": "Default to dry-run",
+        "hint": "Pre-check the dry-run box in the preview and make automatic syncs report-only."
+      }
+    },
+    "notify": {
+      "gmOnly": "Spell List Bridge: only a GM can do that.",
+      "planning": "Spell List Bridge: computing spell-list changes…",
+      "planFailed": "Spell List Bridge: planning failed — see the console (F12) for details.",
+      "applying": "Spell List Bridge: writing spell lists…",
+      "applied": "Spell List Bridge: sync complete — {created} created, {updated} updated.",
+      "autoApplied": "Spell List Bridge: auto-sync updated lists for {identifiers} ({created} created, {updated} updated).",
+      "dryRunDone": "Spell List Bridge: dry run complete — {created} would be created, {updated} updated. See console for the report.",
+      "writeFailed": "Spell List Bridge: writing spell lists failed — see the console (F12).",
+      "noSourcePacks": "No source compendiums are available — check the Source Compendiums setting.",
+      "noLookup": "Plutonium's spell-source lookup could not be loaded; membership falls back to spellClassNames flags only.",
+      "overrideLoadFailed": "Spell List Bridge: could not load the override mapping from \"{path}\".",
+      "noSpellBook": "Spell Book is not active — spellsNotInLists is unavailable.",
+      "noReport": "Spell List Bridge: no reconcile report available yet.",
+      "hiddenSources": "{count} source list(s) hidden in Spell Book."
+    }
+  }
+}
