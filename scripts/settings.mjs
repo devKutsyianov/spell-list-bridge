@@ -83,6 +83,21 @@ export function registerSettings() {
     default: true
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_PREVIEW, {
+    ...w,
+    name: `${MODULE_ID}.settings.autoPreview.name`,
+    hint: `${MODULE_ID}.settings.autoPreview.hint`,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.UI_OVERRIDES, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.RECONCILE_ON_READY, {
     ...w,
     name: `${MODULE_ID}.settings.reconcileOnReady.name`,

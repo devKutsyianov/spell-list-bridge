@@ -50,6 +50,23 @@ Generated Spell Lists pack ──▶ dnd5e registry + Spell Book tabs/filters
   classes, unmapped spells) before writing; supports dry-run.
 - **On ready**: opt-in setting to open the preview at world start.
 
+## Review & edit workflow (v0.2)
+
+Auto-sync now opens the **review window** instead of writing silently (setting:
+*Review window before auto-sync applies*, on by default). The window shows every
+planned create/update — including a **Removing** column — plus a
+**"Detected without a spell list"** section for classes/subclasses found on
+actors or in packs that no data source could populate (the common case:
+subclasses whose spells 5etools doesn't map).
+
+- **Edit list** (pencil, per row) / **Create list** (missing section) opens the
+  list editor: the left column is everything the list will contain after the
+  sync; the right column searches the source compendiums to add spells.
+- Removals become permanent **exclusions**, additions permanent **inclusions** —
+  both are stored as overrides in a world setting (merged with the override
+  JSON file), so they survive every future re-sync.
+- Nothing is written until you press **Apply** in the review window.
+
 ## Homebrew (the Psion case)
 
 Homebrew classes have no 5etools mapping — their membership comes from the

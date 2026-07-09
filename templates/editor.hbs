@@ -1,0 +1,46 @@
+<section class="slb-editor-body">
+  <p class="hint">
+    <strong>{{name}}</strong> <code>{{identifier}}</code>
+    {{#if isSubclass}}<span class="slb-parent">({{localize "TYPES.Item.subclass"}} — {{classIdentifier}})</span>{{/if}}
+    {{#if isNew}}<span class="slb-new-badge">{{localize "spell-list-bridge.editor.newList"}}</span>{{/if}}
+  </p>
+  <p class="hint">{{localize "spell-list-bridge.editor.hint"}}</p>
+
+  <div class="slb-editor-columns">
+    <div class="slb-editor-col">
+      <h4>{{localize "spell-list-bridge.editor.spellsOnList"}} ({{count}})</h4>
+      <ul class="slb-rows">
+        {{#each rows}}
+        <li data-uuid="{{uuid}}" class="{{#if removed}}removed{{/if}}">
+          <span class="slb-row-name">{{name}}</span>
+          <span class="slb-chip slb-chip-{{status}}">{{localize (concat "spell-list-bridge.editor.status." status)}}</span>
+          <button type="button" data-action="toggleRemove" data-tooltip="{{#if removed}}{{localize "spell-list-bridge.editor.restore"}}{{else}}{{localize "spell-list-bridge.editor.remove"}}{{/if}}">
+            <i class="fa-solid {{#if removed}}fa-rotate-left{{else}}fa-trash{{/if}}"></i>
+          </button>
+        </li>
+        {{/each}}
+      </ul>
+    </div>
+    <div class="slb-editor-col">
+      <h4>{{localize "spell-list-bridge.editor.addSpells"}}</h4>
+      <input type="text" name="search" value="{{searchTerm}}" placeholder="{{localize 'spell-list-bridge.editor.searchPlaceholder'}}" autocomplete="off">
+      <ul class="slb-rows slb-results">
+        {{#each results}}
+        <li data-uuid="{{uuid}}">
+          <span class="slb-row-name">{{name}}</span>
+          <button type="button" data-action="addSpell" data-tooltip="{{localize 'spell-list-bridge.editor.add'}}">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+        </li>
+        {{/each}}
+        {{#unless results.length}}
+        <li class="slb-empty">{{#if hasTerm}}{{localize "spell-list-bridge.editor.noMatches"}}{{else}}{{localize "spell-list-bridge.editor.typeToSearch"}}{{/if}}</li>
+        {{/unless}}
+      </ul>
+    </div>
+  </div>
+
+  <footer class="form-footer">
+    <button type="submit"><i class="fa-solid fa-save"></i> {{localize "spell-list-bridge.editor.save"}}</button>
+  </footer>
+</section>

@@ -11,24 +11,50 @@
           <th>{{localize "spell-list-bridge.preview.colType"}}</th>
           <th>{{localize "spell-list-bridge.preview.colAction"}}</th>
           <th class="num">{{localize "spell-list-bridge.preview.colAdded"}}</th>
+          <th class="num">{{localize "spell-list-bridge.preview.colRemoving"}}</th>
           <th class="num">{{localize "spell-list-bridge.preview.colTotal"}}</th>
           <th class="num">{{localize "spell-list-bridge.preview.colStale"}}</th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
         {{#each rows}}
-        <tr class="kind-{{kind}}">
+        <tr class="kind-{{kind}}" data-idx="{{idx}}">
           <td>{{name}} <code>{{identifier}}</code></td>
           <td>{{#if isSubclass}}{{localize "TYPES.Item.subclass"}}{{else}}{{localize "TYPES.Item.class"}}{{/if}}</td>
           <td>{{kindLabel}}</td>
           <td class="num">{{addedCount}}</td>
+          <td class="num">{{removedCount}}</td>
           <td class="num">{{total}}</td>
           <td class="num">{{staleCount}}</td>
+          <td class="slb-row-tools">
+            <button type="button" data-action="editList" data-tooltip="{{localize 'spell-list-bridge.preview.edit'}}">
+              <i class="fa-solid fa-pen-to-square"></i>
+            </button>
+          </td>
         </tr>
         {{/each}}
       </tbody>
     </table>
   </div>
+
+  {{#if missing.length}}
+  <div class="slb-missing">
+    <h4>{{localize "spell-list-bridge.preview.missing"}} ({{missing.length}})</h4>
+    <ul class="slb-missing-list">
+      {{#each missing}}
+      <li data-idx="{{idx}}">
+        <span>{{name}} <code>{{identifier}}</code>
+          {{#if isSubclass}}<em>({{classIdentifier}})</em>{{/if}}
+        </span>
+        <button type="button" data-action="createList">
+          <i class="fa-solid fa-plus"></i> {{localize "spell-list-bridge.preview.createList"}}
+        </button>
+      </li>
+      {{/each}}
+    </ul>
+  </div>
+  {{/if}}
 
   {{#if skipped.length}}
   <details>

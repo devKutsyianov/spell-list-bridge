@@ -20,6 +20,15 @@ const runAuto = foundry.utils.debounce(async () => {
   try {
     const plan = await planReconcile({ identifiers: restricted ?? undefined });
     const changed = plan.actions.filter(a => a.kind !== "unchanged");
+    if (!changed.length && !plan.missing?.length) return;
+    const label = restricted?.join(", ") ?? game.i18n.localize(`${MODULE_ID}.notify.allClasses`);
+    if (game.settings.get(MODULE_ID, SETTINGS.AUTO_PREVIEW)) {
+      // Review-first workflow: show what would be written (including lists that
+      // could not be derived) and let the GM edit before applying.
+      ReconcilePreview.show(plan);
+      ui.notifications.info(game.i18n.format(`${MODULE_ID}.notify.autoReview`, { identifiers: label }));
+      return;
+    }
     if (!changed.length) return;
     const dryRun = game.settings.get(MODULE_ID, SETTINGS.DRY_RUN);
     const report = await applyPlan(plan, { dryRun });
@@ -29,7 +38,7 @@ const runAuto = foundry.utils.debounce(async () => {
       game.i18n.format(`${MODULE_ID}.${key}`, {
         created: report.created.length,
         updated: report.updated.length,
-        identifiers: restricted?.join(", ") ?? game.i18n.localize(`${MODULE_ID}.notify.allClasses`)
+        identifiers: label
       })
     );
   } catch (err) {
@@ -102,7 +111,7 @@ export async function manualReconcile() {
   try {
     const plan = await planReconcile();
     bar?.update?.({ pct: 1 });
-    new ReconcilePreview(plan).render({ force: true });
+    ReconcilePreview.show(plan);
   } catch (err) {
     bar?.update?.({ pct: 1 });
     log("Planning failed", err);

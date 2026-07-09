@@ -17,8 +17,12 @@
       "colType": "Type",
       "colAction": "Action",
       "colAdded": "Adding",
+      "colRemoving": "Removing",
       "colTotal": "Total",
       "colStale": "Stale",
+      "edit": "Edit list",
+      "missing": "Detected without a spell list — click to create",
+      "createList": "Create list",
       "kind": {
         "create": "Create",
         "update": "Update (merge)",
@@ -31,6 +35,25 @@
       "apply": "Apply",
       "export": "Export plan JSON"
     },
+    "editor": {
+      "title": "Edit Spell List — {name}",
+      "newList": "new list",
+      "hint": "Left: everything this list will contain after the sync. Remove entries with the trash icon (they become permanent exclusions), add spells via search on the right (they become permanent inclusions). Saved changes survive every future sync; the write happens when you press Apply in the review window.",
+      "spellsOnList": "Spells on this list",
+      "addSpells": "Add spells",
+      "searchPlaceholder": "Search spells by name…",
+      "typeToSearch": "Type at least 2 characters to search.",
+      "noMatches": "No matches in the source compendiums.",
+      "add": "Add to list",
+      "remove": "Remove (exclude)",
+      "restore": "Restore",
+      "save": "Save changes",
+      "status": {
+        "existing": "on page",
+        "planned": "will be added",
+        "manual": "manual"
+      }
+    },
     "settings": {
       "sourcePacks": {
         "name": "Source Compendiums",
@@ -40,6 +63,10 @@
       "autoTrigger": {
         "name": "Auto-sync after imports and level-ups",
         "hint": "Watch for Plutonium spell/class imports and dnd5e advancement completion, then reconcile the affected classes automatically (debounced)."
+      },
+      "autoPreview": {
+        "name": "Review window before auto-sync applies",
+        "hint": "When auto-sync detects changes, open the review window (with editing tools) instead of writing silently. Disable to restore silent auto-apply."
       },
       "reconcileOnReady": {
         "name": "Open sync preview at world start",
@@ -75,6 +102,9 @@
       "autoApplied": "Spell List Bridge: auto-sync updated lists for {identifiers} ({created} created, {updated} updated).",
       "autoDryRun": "Spell List Bridge: auto-sync DRY RUN for {identifiers} — {created} would be created, {updated} updated. Nothing was written.",
       "allClasses": "all classes",
+      "autoReview": "Spell List Bridge: import detected list changes for {identifiers} — review window opened.",
+      "overrideSaved": "Spell List Bridge: changes for \"{name}\" saved. Press Apply in the review window to write them.",
+      "overrideSaveFailed": "Spell List Bridge: saving the list changes failed — see the console (F12).",
       "noPacksSelected": "Spell List Bridge: select at least one source compendium (or all of them for the default).",
       "dryRunDone": "Spell List Bridge: dry run complete — {created} would be created, {updated} updated. See console for the report.",
       "writeFailed": "Spell List Bridge: writing spell lists failed — see the console (F12).",

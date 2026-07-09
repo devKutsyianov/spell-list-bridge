@@ -9,6 +9,7 @@ import { log, toIdentifier } from "./util.mjs";
  * @property {Map<string, Set<string>>} classes     classIdentifier → Set of spell UUIDs
  * @property {Map<string, Set<string>>} subclasses  `${classId}/${subclassId}` → Set of spell UUIDs
  * @property {Map<string, string>} subclassNames    `${classId}/${subclassId}` → display name
+ * @property {Map<string, Set<string>>} excludes  `class:${id}` / `subclass:${classId}/${scId}` → excluded spell UUIDs
  * @property {{name: string, uuid: string, source: string}[]} unmapped  Plutonium spells with no class resolution
  * @property {string[]} unresolvedOverrides  Override entries that matched no spell
  * @property {string[]} warnings  Human-readable warnings
@@ -19,11 +20,19 @@ import { log, toIdentifier } from "./util.mjs";
  * @property {CompendiumCollection[]} packs  Packs that were scanned
  * @property {{uuid: string, name: string, plutonium: object|undefined}[]} spells
  * @property {{identifier: string, name: string, progression: string}[]} classes
+ * @property {{identifier: string, classIdentifier: string, name: string}[]} subclasses
  * @property {Map<string, string[]>} byName  lowercase spell name → uuids
  */
 
-/** Index fields for the single source-pack scan (spells + classes in one pass). */
-const INDEX_FIELDS = ["type", "name", "system.identifier", "system.spellcasting.progression", `flags.${PLUTONIUM_ID}`];
+/** Index fields for the single source-pack scan (spells + classes + subclasses in one pass). */
+const INDEX_FIELDS = [
+  "type",
+  "name",
+  "system.identifier",
+  "system.classIdentifier",
+  "system.spellcasting.progression",
+  `flags.${PLUTONIUM_ID}`
+];
 
 /**
  * Get the configured source packs (Item compendiums scanned for spells).
@@ -45,7 +54,7 @@ export function getSourcePacks() {
  */
 export async function scanSourcePacks() {
   /** @type {SourcePackScan} */
-  const scan = { packs: getSourcePacks(), spells: [], classes: [], byName: new Map() };
+  const scan = { packs: getSourcePacks(), spells: [], classes: [], subclasses: [], byName: new Map() };
   for (const pack of scan.packs) {
     let packIndex;
     try {
@@ -66,6 +75,12 @@ export async function scanSourcePacks() {
           name: entry.name,
           progression: entry.system?.spellcasting?.progression ?? "none"
         });
+      } else if (entry.type === "subclass") {
+        scan.subclasses.push({
+          identifier: entry.system?.identifier || toIdentifier(entry.name),
+          classIdentifier: entry.system?.classIdentifier ?? "",
+          name: entry.name
+        });
       }
     }
   }
@@ -73,19 +88,75 @@ export async function scanSourcePacks() {
 }
 
 /**
- * Load the override-mapping JSON from the configured path.
- * @returns {Promise<object>} Parsed overrides (empty object when unset or unreadable).
+ * Deep-union two override nodes ({spells, exclude, subclasses}).
+ * @param {object} [a]
+ * @param {object} [b]
+ * @returns {object}
+ */
+function mergeOverrideNode(a = {}, b = {}) {
+  const out = {
+    spells: [...new Set([...(a.spells ?? []), ...(b.spells ?? [])])],
+    exclude: [...new Set([...(a.exclude ?? []), ...(b.exclude ?? [])])]
+  };
+  const subKeys = new Set([...Object.keys(a.subclasses ?? {}), ...Object.keys(b.subclasses ?? {})]);
+  if (subKeys.size) {
+    out.subclasses = {};
+    for (const key of subKeys) out.subclasses[key] = mergeOverrideNode(a.subclasses?.[key], b.subclasses?.[key]);
+  }
+  return out;
+}
+
+/**
+ * Load the effective override mapping: the configured JSON file merged with the
+ * world-setting store written by the list-editor window.
+ * @returns {Promise<object>} Merged overrides (empty object when none).
  */
 export async function loadOverrides() {
+  let file = {};
   const path = (game.settings.get(MODULE_ID, SETTINGS.OVERRIDE_PATH) ?? "").trim();
-  if (!path) return {};
-  try {
-    return (await foundry.utils.fetchJsonWithTimeout(path)) ?? {};
-  } catch (err) {
-    log(`Failed to load override mapping from "${path}"`, err);
-    ui.notifications.error(game.i18n.format(`${MODULE_ID}.notify.overrideLoadFailed`, { path }));
-    return {};
+  if (path) {
+    try {
+      file = (await foundry.utils.fetchJsonWithTimeout(path)) ?? {};
+    } catch (err) {
+      log(`Failed to load override mapping from "${path}"`, err);
+      ui.notifications.error(game.i18n.format(`${MODULE_ID}.notify.overrideLoadFailed`, { path }));
+    }
   }
+  const stored = game.settings.get(MODULE_ID, SETTINGS.UI_OVERRIDES) ?? {};
+  const merged = {};
+  for (const classId of new Set([...Object.keys(file), ...Object.keys(stored)])) {
+    merged[classId] = mergeOverrideNode(file[classId], stored[classId]);
+  }
+  return merged;
+}
+
+/**
+ * Persist a list edit from the editor window into the world-setting override
+ * store. Adds win over previous excludes and vice versa (last edit wins).
+ * @param {object} args
+ * @param {string} args.classIdentifier          Class identifier the list belongs to.
+ * @param {string} [args.subclassIdentifier]     Set for subclass lists.
+ * @param {string[]} [args.adds]                 Spell UUIDs added manually.
+ * @param {string[]} [args.excludes]             Spell UUIDs removed manually.
+ * @returns {Promise<void>}
+ */
+export async function saveListOverride({ classIdentifier, subclassIdentifier, adds = [], excludes = [] }) {
+  const store = foundry.utils.deepClone(game.settings.get(MODULE_ID, SETTINGS.UI_OVERRIDES) ?? {});
+  const cls = (store[classIdentifier] ??= {});
+  const node = subclassIdentifier ? ((cls.subclasses ??= {})[subclassIdentifier] ??= {}) : cls;
+  const spells = new Set(node.spells ?? []);
+  const exclude = new Set(node.exclude ?? []);
+  for (const uuid of adds) {
+    spells.add(uuid);
+    exclude.delete(uuid);
+  }
+  for (const uuid of excludes) {
+    exclude.add(uuid);
+    spells.delete(uuid);
+  }
+  node.spells = [...spells];
+  node.exclude = [...exclude];
+  await game.settings.set(MODULE_ID, SETTINGS.UI_OVERRIDES, store);
 }
 
 /**
@@ -120,6 +191,7 @@ export async function buildMembershipIndex({ overrides, scan } = {}) {
     classes: new Map(),
     subclasses: new Map(),
     subclassNames: new Map(),
+    excludes: new Map(),
     unmapped: [],
     unresolvedOverrides: [],
     warnings: []
@@ -197,17 +269,28 @@ export async function buildMembershipIndex({ overrides, scan } = {}) {
     }
   };
 
+  const addExclude = (key, uuid) => {
+    if (!index.excludes.has(key)) index.excludes.set(key, new Set());
+    index.excludes.get(key).add(uuid);
+  };
+
   for (const [classId, config] of Object.entries(overrides)) {
     for (const ref of config?.spells ?? []) {
       const uuids = resolveRef(ref);
       if (!uuids.length) index.unresolvedOverrides.push(`${classId}: ${ref}`);
       for (const uuid of uuids) addClass(classId, uuid);
     }
+    for (const ref of config?.exclude ?? []) {
+      for (const uuid of resolveRef(ref)) addExclude(`class:${classId}`, uuid);
+    }
     for (const [subclassId, scConfig] of Object.entries(config?.subclasses ?? {})) {
       for (const ref of scConfig?.spells ?? []) {
         const uuids = resolveRef(ref);
         if (!uuids.length) index.unresolvedOverrides.push(`${classId}/${subclassId}: ${ref}`);
         for (const uuid of uuids) addSubclass(classId, subclassId, undefined, uuid);
+      }
+      for (const ref of scConfig?.exclude ?? []) {
+        for (const uuid of resolveRef(ref)) addExclude(`subclass:${classId}/${subclassId}`, uuid);
       }
     }
   }
@@ -266,5 +349,28 @@ export async function collectTargetClasses({ overrides, scan } = {}) {
     put(classId, classId.titleCase?.() ?? classId, "none", true);
   }
 
+  return targets;
+}
+
+/**
+ * Collect subclasses present in the world (actor items + source packs), so
+ * planning can surface ones that end up with no spell list.
+ * @param {object} [options]
+ * @param {SourcePackScan} [options.scan]  Preloaded source-pack scan.
+ * @returns {Promise<Map<string, {identifier: string, classIdentifier: string, name: string}>>}
+ *   `${classId}/${subclassId}` → descriptor.
+ */
+export async function collectTargetSubclasses({ scan } = {}) {
+  scan ??= await scanSourcePacks();
+  const targets = new Map();
+  const put = (classId, subclassId, name) => {
+    if (!classId || !subclassId) return;
+    const key = `${classId}/${subclassId}`;
+    if (!targets.has(key)) targets.set(key, { identifier: subclassId, classIdentifier: classId, name });
+  };
+  for (const actor of game.actors) {
+    for (const sc of actor.itemTypes?.subclass ?? []) put(sc.system.classIdentifier, sc.identifier, sc.name);
+  }
+  for (const sc of scan.subclasses) put(sc.classIdentifier, sc.identifier, sc.name);
   return targets;
 }

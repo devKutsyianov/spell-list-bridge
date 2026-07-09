@@ -31,7 +31,11 @@ export const SETTINGS = {
   OVERRIDE_PATH: "overridePath",
   BATCH_SIZE: "batchSize",
   DRY_RUN: "dryRun",
-  LAST_REPORT: "lastReport"
+  LAST_REPORT: "lastReport",
+  /** Curated list edits made through the editor window (same shape as the override JSON). */
+  UI_OVERRIDES: "uiOverrides",
+  /** Open the review window after auto-detected imports instead of applying silently. */
+  AUTO_PREVIEW: "autoPreview"
 };
 
 /** Soft-detected neighbor modules. */

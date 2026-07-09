@@ -2,7 +2,7 @@
 
 import { JOURNAL_NAME, MODULE_ID, PACK_ID, PAGE_FLAGS, SETTINGS } from "./constants.mjs";
 import { assignListToActors, ensureSpellBookRegistryToggle, hideSourceListsInSpellBook, isSpellBookActive } from "./integrations.mjs";
-import { buildMembershipIndex, collectTargetClasses, loadOverrides, scanSourcePacks } from "./membership.mjs";
+import { buildMembershipIndex, collectTargetClasses, collectTargetSubclasses, loadOverrides, scanSourcePacks } from "./membership.mjs";
 import { chunk, log } from "./util.mjs";
 
 /**
@@ -15,14 +15,27 @@ import { chunk, log } from "./util.mjs";
  * @property {string} [pageId]          Existing generated page id (update/unchanged)
  * @property {string} [pageUuid]        Existing generated page uuid (update/unchanged)
  * @property {string[]} added           Spell UUIDs to add
+ * @property {string[]} removed         Spell UUIDs excluded by the editor/overrides (deleted from OUR page on apply)
+ * @property {string[]} current         Spell UUIDs currently on the generated page
  * @property {string[]} stale           Spell UUIDs on the page no longer derivable (report-only, never deleted)
  * @property {string[]} sourcePages     UUIDs of non-generated pages contributing to this identifier
  * @property {number} total             Final spell count after apply
  */
 
 /**
+ * @typedef {object} MissingList
+ * @property {"class"|"subclass"} listType
+ * @property {string} identifier
+ * @property {string} [classIdentifier]
+ * @property {string} name
+ * @property {string[]} current  Always empty — exists for editor compatibility
+ * @property {string[]} added    Always empty — exists for editor compatibility
+ */
+
+/**
  * @typedef {object} ReconcilePlan
  * @property {PlanAction[]} actions
+ * @property {MissingList[]} missing   Classes/subclasses present in the world but ending up with no list
  * @property {boolean} restricted      Whether the plan covered only some identifiers
  * @property {{name: string, uuid: string, source: string}[]} unmapped
  * @property {string[]} unresolvedOverrides
@@ -132,11 +145,12 @@ async function scanSourceLists() {
  * @returns {Promise<ReconcilePlan>} The plan.
  */
 export async function planReconcile({ identifiers } = {}) {
-  // One override fetch and one source-pack scan shared by both consumers.
+  // One override fetch and one source-pack scan shared by all consumers.
   const [overrides, scan] = await Promise.all([loadOverrides(), scanSourcePacks()]);
-  const [index, targets, sourceLists] = await Promise.all([
+  const [index, targets, subTargets, sourceLists] = await Promise.all([
     buildMembershipIndex({ overrides, scan }),
     collectTargetClasses({ overrides, scan }),
+    collectTargetSubclasses({ scan }),
     scanSourceLists()
   ]);
   const pack = await getPack();
@@ -154,6 +168,7 @@ export async function planReconcile({ identifiers } = {}) {
   /** @type {ReconcilePlan} */
   const plan = {
     actions: [],
+    missing: [],
     restricted: !!restrict,
     unmapped: index.unmapped,
     unresolvedOverrides: index.unresolvedOverrides,
@@ -167,17 +182,25 @@ export async function planReconcile({ identifiers } = {}) {
 
   const makeAction = (listType, identifier, name, derived, classIdentifier) => {
     const source = sourceLists.get(`${listType}:${identifier}`);
-    // Comprehensive page = bridge-derived ∪ existing source lists, so a single
-    // page can drive a Spell Book class tab (NOTES.md §4.2).
+    const excludes = index.excludes.get(
+      listType === "class" ? `class:${identifier}` : `subclass:${classIdentifier}/${identifier}`
+    ) ?? new Set();
+    // Comprehensive page = bridge-derived ∪ existing source lists, minus
+    // explicit editor/override exclusions, so a single page can drive a
+    // Spell Book class tab (NOTES.md §4.2).
     const desired = new Set(derived);
     for (const uuid of source?.uuids ?? []) desired.add(uuid);
+    for (const uuid of excludes) desired.delete(uuid);
     const existing = existingPages.get(listKey(listType, identifier, classIdentifier));
     const current = new Set(existing?.system.spells ?? []);
     for (const u of desired) covered.add(u);
     for (const u of current) covered.add(u);
     const added = [...desired].filter(u => !current.has(u));
-    const stale = [...current].filter(u => !desired.has(u));
-    const kind = !existing ? "create" : added.length ? "update" : "unchanged";
+    // Excluded spells still on OUR page are removed on apply — an explicit user
+    // decision, unlike `stale` which stays report-only.
+    const removed = [...current].filter(u => excludes.has(u));
+    const stale = [...current].filter(u => !desired.has(u) && !excludes.has(u));
+    const kind = !existing ? "create" : added.length || removed.length ? "update" : "unchanged";
     plan.actions.push({
       kind,
       listType,
@@ -187,9 +210,11 @@ export async function planReconcile({ identifiers } = {}) {
       pageId: existing?.id,
       pageUuid: existing?.uuid,
       added,
+      removed,
+      current: [...current],
       stale,
       sourcePages: source?.pages ?? [],
-      total: current.size + added.length
+      total: current.size + added.length - removed.length
     });
   };
 
@@ -209,7 +234,11 @@ export async function planReconcile({ identifiers } = {}) {
         plan.skipped.push(game.i18n.format(`${MODULE_ID}.plan.skippedEmpty`, { name: target.name, identifier }));
       }
       // Casters whose lists already exist outside the bridge are intentionally
-      // left alone — dnd5e registers those pages natively.
+      // left alone — dnd5e registers those pages natively. Casters with no list
+      // at all become curation candidates for the editor window.
+      if (target.progression !== "none" && !hasSourceList) {
+        plan.missing.push({ listType: "class", identifier, name: target.name, current: [], added: [] });
+      }
       continue;
     }
     makeAction("class", identifier, target.name, derived ?? new Set());
@@ -220,8 +249,26 @@ export async function planReconcile({ identifiers } = {}) {
     const [classId, subclassId] = key.split("/");
     if (restrict && !restrict.has(classId)) continue;
     if (!targets.has(classId)) continue;
-    const name = index.subclassNames.get(key) ?? subclassId;
+    const name = index.subclassNames.get(key) ?? subTargets.get(key)?.name ?? subclassId;
     makeAction("subclass", subclassId, name, uuids, classId);
+  }
+
+  // Subclasses present in the world (actor items / source packs) that ended up
+  // with no derived list and no generated page — surfaced for manual curation.
+  for (const [key, target] of subTargets) {
+    const [classId] = key.split("/");
+    if (restrict && !restrict.has(classId)) continue;
+    if (!targets.has(classId)) continue;
+    if (index.subclasses.has(key)) continue;
+    if (existingPages.has(listKey("subclass", target.identifier, classId))) continue;
+    plan.missing.push({
+      listType: "subclass",
+      identifier: target.identifier,
+      classIdentifier: classId,
+      name: target.name,
+      current: [],
+      added: []
+    });
   }
 
   // "Unmapped" should mean "on no list at all" — a spell Plutonium data can't
@@ -286,7 +333,7 @@ async function _applyPlan(plan, { dryRun = false, onProgress } = {}) {
     spellBook: { registryToggled: 0, hiddenSources: 0, assignedActors: {} }
   };
 
-  const entryFor = (a, added, total) => ({ identifier: a.identifier, type: a.listType, name: a.name, added, total });
+  const entryFor = (a, added, total, removed = 0) => ({ identifier: a.identifier, type: a.listType, name: a.name, added, removed, total });
   for (const a of plan.actions) {
     if (a.stale.length) report.stale.push({ identifier: a.identifier, type: a.listType, spells: a.stale });
     if (a.kind === "unchanged") report.unchanged.push(entryFor(a, 0, a.total));
@@ -296,7 +343,7 @@ async function _applyPlan(plan, { dryRun = false, onProgress } = {}) {
     // A dry run reports the plan's prediction — it is labeled as such.
     for (const a of plan.actions) {
       if (a.kind === "unchanged") continue;
-      report[a.kind === "create" ? "created" : "updated"].push(entryFor(a, a.added.length, a.total));
+      report[a.kind === "create" ? "created" : "updated"].push(entryFor(a, a.added.length, a.total, a.removed?.length ?? 0));
     }
     log("Dry run — no writes performed", report);
     await setLastReport(report);
@@ -331,14 +378,16 @@ async function _applyPlan(plan, { dryRun = false, onProgress } = {}) {
     if (existing) {
       const merged = new Set(existing.system.spells);
       const add = a.added.filter(u => !merged.has(u));
-      if (!add.length) {
+      const rem = (a.removed ?? []).filter(u => merged.has(u));
+      if (!add.length && !rem.length) {
         report.unchanged.push(entryFor(a, 0, merged.size));
         continue;
       }
       for (const u of add) merged.add(u);
+      for (const u of rem) merged.delete(u);
       updates.push({
         data: { _id: existing.id, "system.spells": [...merged], [`flags.${MODULE_ID}.${PAGE_FLAGS.UPDATED}`]: now },
-        meta: entryFor(a, add.length, merged.size)
+        meta: entryFor(a, add.length, merged.size, rem.length)
       });
     } else {
       creates.push({

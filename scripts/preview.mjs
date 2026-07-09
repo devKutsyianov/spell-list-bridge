@@ -1,14 +1,17 @@
-/** @file GM preview dialog for a reconcile plan (ApplicationV2 + Handlebars). */
+/** @file GM review window for a reconcile plan (ApplicationV2 + Handlebars). */
 
 import { MODULE_ID, SETTINGS } from "./constants.mjs";
-import { applyPlan } from "./reconcile.mjs";
+import { SpellListEditor } from "./editor.mjs";
+import { applyPlan, planReconcile } from "./reconcile.mjs";
 import { exportJson, log } from "./util.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 /**
- * Preview window listing create/update/merge actions, skips, and unmapped
- * spells before any write happens.
+ * Review window listing create/update/merge actions, skips, missing lists, and
+ * unmapped spells before any write happens. Rows open the list editor; edits
+ * are saved as overrides and the plan refreshes to show their effect first —
+ * Apply then writes everything.
  */
 export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) {
   /**
@@ -23,15 +26,40 @@ export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) 
   /** Guard against double-submits while a (long) apply is running. */
   #applying = false;
 
+  /** @type {ReconcilePreview|null} The currently open preview, if any. */
+  static #current = null;
+
+  /**
+   * Open the preview as a singleton: re-use (and re-plan) an already open
+   * window instead of stacking duplicates.
+   * @param {import("./reconcile.mjs").ReconcilePlan} plan
+   * @returns {ReconcilePreview}
+   */
+  static show(plan) {
+    if (ReconcilePreview.#current?.rendered) {
+      ReconcilePreview.#current.plan = plan;
+      ReconcilePreview.#current.render();
+      return ReconcilePreview.#current;
+    }
+    const app = new ReconcilePreview(plan);
+    ReconcilePreview.#current = app;
+    app.render({ force: true });
+    return app;
+  }
+
   /** @override */
   static DEFAULT_OPTIONS = {
     id: "slb-reconcile-preview",
     classes: ["spell-list-bridge", "reconcile-preview"],
     tag: "form",
-    position: { width: 640, height: 620 },
+    position: { width: 700, height: 660 },
     window: { title: "spell-list-bridge.preview.title", icon: "fa-solid fa-arrows-rotate", resizable: true },
     form: { handler: ReconcilePreview.#onApply, closeOnSubmit: true },
-    actions: { export: ReconcilePreview.#onExport }
+    actions: {
+      export: ReconcilePreview.#onExport,
+      editList: ReconcilePreview.#onEditList,
+      createList: ReconcilePreview.#onCreateList
+    }
   };
 
   /** @override */
@@ -43,16 +71,22 @@ export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) 
   /** @override */
   async _prepareContext() {
     const rows = this.plan.actions
-      .map(a => ({
+      .map((a, idx) => ({
         ...a,
+        idx,
         addedCount: a.added.length,
+        removedCount: a.removed?.length ?? 0,
         staleCount: a.stale.length,
         isSubclass: a.listType === "subclass",
         kindLabel: game.i18n.localize(`${MODULE_ID}.preview.kind.${a.kind}`)
       }))
       .sort((a, b) => a.name.localeCompare(b.name, game.i18n.lang));
+    const missing = (this.plan.missing ?? [])
+      .map((m, idx) => ({ ...m, idx, isSubclass: m.listType === "subclass" }))
+      .sort((a, b) => a.name.localeCompare(b.name, game.i18n.lang));
     return {
       rows,
+      missing,
       changed: rows.filter(r => r.kind !== "unchanged").length,
       unchanged: rows.filter(r => r.kind === "unchanged").length,
       unmapped: this.plan.unmapped,
@@ -61,6 +95,43 @@ export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) 
       warnings: this.plan.warnings,
       dryRunDefault: game.settings.get(MODULE_ID, SETTINGS.DRY_RUN)
     };
+  }
+
+  /**
+   * Recompute the plan (e.g. after an editor save) and re-render.
+   * @returns {Promise<void>}
+   */
+  async refresh() {
+    try {
+      this.plan = await planReconcile();
+      this.render();
+    } catch (err) {
+      log("Failed to refresh plan", err);
+    }
+  }
+
+  /**
+   * Open the editor for a planned list row.
+   * @this {ReconcilePreview}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static #onEditList(_event, target) {
+    const action = this.plan.actions[Number(target.closest("[data-idx]")?.dataset.idx)];
+    if (!action) return;
+    new SpellListEditor(action, { onSave: () => this.refresh() }).render({ force: true });
+  }
+
+  /**
+   * Open the editor to create a list for a class/subclass that has none.
+   * @this {ReconcilePreview}
+   * @param {PointerEvent} _event
+   * @param {HTMLElement} target
+   */
+  static #onCreateList(_event, target) {
+    const entry = this.plan.missing?.[Number(target.closest("[data-idx]")?.dataset.idx)];
+    if (!entry) return;
+    new SpellListEditor(entry, { onSave: () => this.refresh() }).render({ force: true });
   }
 
   /**
