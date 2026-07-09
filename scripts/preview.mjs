@@ -2,7 +2,7 @@
 
 import { MODULE_ID, SETTINGS } from "./constants.mjs";
 import { SpellListEditor } from "./editor.mjs";
-import { applyPlan, planReconcile } from "./reconcile.mjs";
+import { applyPlan, planReconcile, pruneDeadReferences } from "./reconcile.mjs";
 import { exportJson, log } from "./util.mjs";
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
@@ -58,7 +58,8 @@ export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) 
     actions: {
       export: ReconcilePreview.#onExport,
       editList: ReconcilePreview.#onEditList,
-      createList: ReconcilePreview.#onCreateList
+      createList: ReconcilePreview.#onCreateList,
+      prune: ReconcilePreview.#onPrune
     }
   };
 
@@ -176,5 +177,47 @@ export class ReconcilePreview extends HandlebarsApplicationMixin(ApplicationV2) 
    */
   static #onExport() {
     exportJson(this.plan, `${MODULE_ID}-plan-${Date.now()}.json`);
+  }
+
+  /**
+   * Remove dead references from generated pages, after a confirmation that
+   * lists exactly what would be removed/deleted.
+   * @this {ReconcilePreview}
+   */
+  static async #onPrune() {
+    const preview = await pruneDeadReferences({ dryRun: true });
+    if (!preview.lists.length && !preview.overridesCleaned) {
+      ui.notifications.info(game.i18n.localize(`${MODULE_ID}.notify.pruneNothing`));
+      return;
+    }
+    const esc = foundry.utils.escapeHTML;
+    const rows = preview.lists
+      .map(l => `<li>${esc(l.name)} <code>${esc(l.identifier)}</code>: ${game.i18n.format(`${MODULE_ID}.prune.row`, { removed: l.removed, remaining: l.remaining })}</li>`)
+      .join("");
+    const pages = preview.deletedPages.length
+      ? `<p><strong>${game.i18n.format(`${MODULE_ID}.prune.deletedPages`, { count: preview.deletedPages.length })}</strong> ${preview.deletedPages.map(p => esc(p.name)).join(", ")}</p>`
+      : "";
+    const overrides = preview.overridesCleaned
+      ? `<p>${game.i18n.format(`${MODULE_ID}.prune.overrides`, { count: preview.overridesCleaned })}</p>`
+      : "";
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: game.i18n.localize(`${MODULE_ID}.prune.title`), icon: "fa-solid fa-broom" },
+      position: { width: 480 },
+      content: `<p>${game.i18n.format(`${MODULE_ID}.prune.summary`, { removed: preview.removedTotal, lists: preview.lists.length })}</p>
+        <ul>${rows}</ul>${pages}${overrides}
+        <p class="hint">${game.i18n.localize(`${MODULE_ID}.prune.reloadHint`)}</p>`,
+      rejectClose: false
+    });
+    if (!confirmed) return;
+    const result = await pruneDeadReferences();
+    if (result.ok === false) return;
+    ui.notifications.info(
+      game.i18n.format(`${MODULE_ID}.notify.pruneDone`, {
+        removed: result.removedTotal,
+        lists: result.lists.length,
+        pages: result.deletedPages.length
+      })
+    );
+    this.refresh();
   }
 }

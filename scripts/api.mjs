@@ -4,7 +4,7 @@ import { MODULE_ID } from "./constants.mjs";
 import { spellsNotInLists } from "./integrations.mjs";
 import { buildMembershipIndex } from "./membership.mjs";
 import { ReconcilePreview } from "./preview.mjs";
-import { applyPlan, getLastReport, planReconcile } from "./reconcile.mjs";
+import { applyPlan, getLastReport, planReconcile, pruneDeadReferences } from "./reconcile.mjs";
 import { exportJson, requireGM } from "./util.mjs";
 
 /**
@@ -52,10 +52,23 @@ function exportReport() {
   return report;
 }
 
+/**
+ * Remove dead spell references from generated pages (and delete pages left
+ * empty). See `pruneDeadReferences` for the result shape.
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun=false]
+ * @returns {Promise<object|void>}
+ */
+async function prune({ dryRun = false } = {}) {
+  if (!requireGM()) return;
+  return pruneDeadReferences({ dryRun });
+}
+
 /** Attach the API to the module. */
 export function createApi() {
   game.modules.get(MODULE_ID).api = {
     reconcile,
+    prune,
     reportUnmapped,
     spellsNotInLists,
     exportReport,

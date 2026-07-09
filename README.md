@@ -67,6 +67,17 @@ subclasses whose spells 5etools doesn't map).
   JSON file), so they survive every future re-sync.
 - Nothing is written until you press **Apply** in the review window.
 
+### Pruning after compendium cleanup
+
+Deleting spells from a source compendium never edits lists automatically (the
+sync is additive by design) — the dead references linger on generated pages and
+show up as *Stale*. The **Prune dead links** button in the review footer (or
+`api.prune({ dryRun })`) removes references to no-longer-existing spells from
+the module's own pages, deletes generated pages left completely empty, and
+cleans dead entries out of saved list edits — always behind a confirmation
+dialog listing exactly what goes. Foreign pages are never touched; the dnd5e
+registry fully reflects removals after the next reload.
+
 ## Homebrew (the Psion case)
 
 Homebrew classes have no 5etools mapping — their membership comes from the

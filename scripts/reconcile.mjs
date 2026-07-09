@@ -497,6 +497,109 @@ async function registerPages(pages, report) {
   return count;
 }
 
+/**
+ * Whether a spell UUID still resolves to a live document (compendium index
+ * lookups are synchronous).
+ * @param {string} uuid
+ * @returns {boolean}
+ */
+function isAlive(uuid) {
+  try {
+    return !!fromUuidSync(uuid);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove dead spell references (deleted compendium/world documents) from OUR
+ * generated pages, delete generated pages left completely empty, and drop dead
+ * UUIDs from the editor's override store. Foreign pages are never touched.
+ * Serialized on the same chain as applyPlan.
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun=false]  Compute the result without writing.
+ * @returns {Promise<object>} Prune result: `{ok, dryRun, lists, deletedPages, removedTotal, overridesCleaned}`.
+ */
+export function pruneDeadReferences(options = {}) {
+  const run = _applyChain.then(() => _prune(options));
+  _applyChain = run.catch(() => {});
+  return run;
+}
+
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun]
+ * @returns {Promise<object>}
+ */
+async function _prune({ dryRun = false } = {}) {
+  if (!game.user.isGM) throw new Error(`${MODULE_ID}: prune is GM-only`);
+  const batchSize = game.settings.get(MODULE_ID, SETTINGS.BATCH_SIZE) || 100;
+  const result = { ok: true, dryRun, appliedAt: new Date().toISOString(), lists: [], deletedPages: [], removedTotal: 0, overridesCleaned: 0 };
+
+  const pack = await getPack({ unlock: !dryRun });
+  const journal = await getJournal(pack);
+  const updates = [];
+  const deletions = [];
+  for (const page of journal?.pages ?? []) {
+    if (!isGeneratedPage(page)) continue;
+    const alive = [];
+    let dead = 0;
+    for (const uuid of page.system.spells) {
+      if (isAlive(uuid)) alive.push(uuid);
+      else dead++;
+    }
+    if (!dead) continue;
+    result.removedTotal += dead;
+    const entry = { name: page.name, identifier: page.system.identifier, type: page.system.type, removed: dead, remaining: alive.length };
+    result.lists.push(entry);
+    if (!alive.length && !page.system.unlinkedSpells?.length) {
+      deletions.push(page.id);
+      result.deletedPages.push(entry);
+    } else {
+      updates.push({ _id: page.id, "system.spells": alive, [`flags.${MODULE_ID}.${PAGE_FLAGS.UPDATED}`]: result.appliedAt });
+    }
+  }
+
+  // Clean dead UUID entries out of the editor's override store (names and the
+  // override FILE are left untouched — dead file refs surface as unresolved).
+  const store = foundry.utils.deepClone(game.settings.get(MODULE_ID, SETTINGS.UI_OVERRIDES) ?? {});
+  const cleanNode = node => {
+    if (!node) return;
+    for (const key of ["spells", "exclude"]) {
+      if (!Array.isArray(node[key])) continue;
+      const kept = node[key].filter(ref => !(ref.includes(".") && !isAlive(ref)));
+      result.overridesCleaned += node[key].length - kept.length;
+      node[key] = kept;
+    }
+    for (const sub of Object.values(node.subclasses ?? {})) cleanNode(sub);
+  };
+  for (const node of Object.values(store)) cleanNode(node);
+
+  if (dryRun) {
+    log("Prune dry run", result);
+    return result;
+  }
+
+  try {
+    for (const batch of chunk(updates, batchSize)) {
+      await journal.updateEmbeddedDocuments("JournalEntryPage", batch);
+    }
+    for (const batch of chunk(deletions, batchSize)) {
+      await journal.deleteEmbeddedDocuments("JournalEntryPage", batch);
+    }
+    if (result.overridesCleaned) await game.settings.set(MODULE_ID, SETTINGS.UI_OVERRIDES, store);
+  } catch (err) {
+    log("Prune failed", err);
+    result.ok = false;
+    result.error = String(err.message ?? err);
+    ui.notifications.error(game.i18n.localize(`${MODULE_ID}.notify.writeFailed`));
+    return result;
+  }
+
+  log("Prune complete", result);
+  return result;
+}
+
 let _lastReport = null;
 
 /**

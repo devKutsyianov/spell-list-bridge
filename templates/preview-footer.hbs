@@ -3,6 +3,9 @@
     <input type="checkbox" name="dryRun" {{#if dryRunDefault}}checked{{/if}}>
     {{localize "spell-list-bridge.preview.dryRun"}}
   </label>
+  <button type="button" data-action="prune" data-tooltip="{{localize 'spell-list-bridge.prune.tooltip'}}">
+    <i class="fa-solid fa-broom"></i> {{localize "spell-list-bridge.preview.prune"}}
+  </button>
   <button type="button" data-action="export">
     <i class="fa-solid fa-file-export"></i> {{localize "spell-list-bridge.preview.export"}}
   </button>

@@ -33,7 +33,17 @@
       "unresolved": "Unresolved override entries",
       "dryRun": "Dry run (report only, no writes)",
       "apply": "Apply",
-      "export": "Export plan JSON"
+      "export": "Export plan JSON",
+      "prune": "Prune dead links"
+    },
+    "prune": {
+      "title": "Prune Dead References",
+      "tooltip": "Remove references to deleted spells from the generated lists (with confirmation).",
+      "summary": "{removed} dead reference(s) found across {lists} generated list(s). They point to spells that no longer exist and will be removed:",
+      "row": "{removed} dead, {remaining} remain",
+      "deletedPages": "{count} list page(s) will be DELETED (nothing would remain on them):",
+      "overrides": "{count} dead entr(ies) will also be removed from saved list edits.",
+      "reloadHint": "Only the module's own generated pages are touched. The dnd5e registry fully reflects removals after the next world reload."
     },
     "editor": {
       "title": "Edit Spell List — {name}",
@@ -113,7 +123,9 @@
       "overrideLoadFailed": "Spell List Bridge: could not load the override mapping from \"{path}\".",
       "noSpellBook": "Spell Book is not active — spellsNotInLists is unavailable.",
       "noReport": "Spell List Bridge: no reconcile report available yet.",
-      "hiddenSources": "{count} source list(s) hidden in Spell Book."
+      "hiddenSources": "{count} source list(s) hidden in Spell Book.",
+      "pruneNothing": "Spell List Bridge: no dead references found — nothing to prune.",
+      "pruneDone": "Spell List Bridge: pruned {removed} dead reference(s) from {lists} list(s); {pages} empty page(s) deleted."
     }
   }
 }

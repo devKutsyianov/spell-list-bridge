@@ -257,13 +257,16 @@ export async function buildMembershipIndex({ overrides, scan } = {}) {
 
   // 1. Overrides — authoritative, applied last so they always land, and reported when unresolved.
   // Name resolution runs first so spell names containing "." are not mistaken for UUIDs.
+  // UUID refs must still resolve to a live document — otherwise deleted spells
+  // would be re-added to lists forever (and defeat pruning).
   const resolveRef = ref => {
     if (typeof ref !== "string" || !ref) return [];
     if (ref.startsWith("uuid://")) ref = ref.slice("uuid://".length);
     const named = scan.byName.get(ref.toLowerCase());
     if (named?.length) return named;
     try {
-      return foundry.utils.parseUuid(ref)?.documentId ? [ref] : [];
+      if (!foundry.utils.parseUuid(ref)?.documentId) return [];
+      return fromUuidSync(ref) ? [ref] : [];
     } catch {
       return [];
     }
