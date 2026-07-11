@@ -181,7 +181,7 @@ export async function planReconcile({ identifiers } = {}) {
   const covered = new Set();
 
   const makeAction = (listType, identifier, name, derived, classIdentifier, source = "") => {
-    const source = sourceLists.get(`${listType}:${identifier}`);
+    const sourceList = sourceLists.get(`${listType}:${identifier}`);
     const excludes = index.excludes.get(
       listType === "class" ? `class:${identifier}` : `subclass:${classIdentifier}/${identifier}`
     ) ?? new Set();
@@ -189,7 +189,7 @@ export async function planReconcile({ identifiers } = {}) {
     // explicit editor/override exclusions, so a single page can drive a
     // Spell Book class tab (NOTES.md §4.2).
     const desired = new Set(derived);
-    for (const uuid of source?.uuids ?? []) desired.add(uuid);
+    for (const uuid of sourceList?.uuids ?? []) desired.add(uuid);
     for (const uuid of excludes) desired.delete(uuid);
     const existing = existingPages.get(listKey(listType, identifier, classIdentifier));
     const current = new Set(existing?.system.spells ?? []);
@@ -214,7 +214,7 @@ export async function planReconcile({ identifiers } = {}) {
       removed,
       current: [...current],
       stale,
-      sourcePages: source?.pages ?? [],
+      sourcePages: sourceList?.pages ?? [],
       total: current.size + added.length - removed.length
     });
   };
