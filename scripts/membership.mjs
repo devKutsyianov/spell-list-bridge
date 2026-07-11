@@ -31,6 +31,7 @@ const INDEX_FIELDS = [
   "system.identifier",
   "system.classIdentifier",
   "system.spellcasting.progression",
+  "system.source.book",
   `flags.${PLUTONIUM_ID}`
 ];
 
@@ -65,7 +66,13 @@ export async function scanSourcePacks() {
     }
     for (const entry of packIndex) {
       if (entry.type === "spell") {
-        scan.spells.push({ uuid: entry.uuid, name: entry.name, plutonium: entry.flags?.[PLUTONIUM_ID] });
+        scan.spells.push({
+          uuid: entry.uuid,
+          name: entry.name,
+          plutonium: entry.flags?.[PLUTONIUM_ID],
+          // Human-readable origin, so same-named printings are tellable apart.
+          source: entry.flags?.[PLUTONIUM_ID]?.source ?? entry.system?.source?.book ?? pack.metadata.label
+        });
         const key = entry.name.toLowerCase();
         if (!scan.byName.has(key)) scan.byName.set(key, []);
         scan.byName.get(key).push(entry.uuid);

@@ -11,8 +11,9 @@
       <h4>{{localize "spell-list-bridge.editor.spellsOnList"}} ({{count}})</h4>
       <ul class="slb-rows">
         {{#each rows}}
-        <li data-uuid="{{uuid}}" class="{{#if removed}}removed{{/if}}">
+        <li data-uuid="{{uuid}}" class="{{#if removed}}removed{{/if}} {{#if isDup}}slb-dup{{/if}}">
           <span class="slb-row-name">{{name}}</span>
+          {{#if source}}<span class="slb-src {{#if isDup}}slb-src-dup{{/if}}" data-tooltip="{{source}}">{{source}}</span>{{/if}}
           <span class="slb-chip slb-chip-{{status}}">{{localize (concat "spell-list-bridge.editor.status." status)}}</span>
           <button type="button" data-action="toggleRemove" data-tooltip="{{#if removed}}{{localize "spell-list-bridge.editor.restore"}}{{else}}{{localize "spell-list-bridge.editor.remove"}}{{/if}}">
             <i class="fa-solid {{#if removed}}fa-rotate-left{{else}}fa-trash{{/if}}"></i>
@@ -28,6 +29,7 @@
         {{#each results}}
         <li data-uuid="{{uuid}}">
           <span class="slb-row-name">{{name}}</span>
+          {{#if source}}<span class="slb-src" data-tooltip="{{source}}">{{source}}</span>{{/if}}
           <button type="button" data-action="addSpell" data-tooltip="{{localize 'spell-list-bridge.editor.add'}}">
             <i class="fa-solid fa-plus"></i>
           </button>

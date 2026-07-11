@@ -2,7 +2,7 @@
   "id": "spell-list-bridge",
   "title": "Spell List Bridge (Plutonium → Spell Book)",
   "description": "Automatically generates and registers dnd5e class/subclass spell-list journal pages from Plutonium-imported spells, so Spell Book and the native dnd5e class filters recognize them. Idempotent, non-destructive, homebrew-aware.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "authors": [
     {
       "name": "uniks"

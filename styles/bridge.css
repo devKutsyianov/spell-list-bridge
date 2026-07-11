@@ -151,6 +151,29 @@
   white-space: nowrap;
 }
 
+.spell-list-bridge .slb-src {
+  font-size: var(--font-size-10, 10px);
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  background: var(--color-bg-option, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--color-border-light-tertiary, #7a7971);
+  opacity: 0.7;
+  white-space: nowrap;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spell-list-bridge .slb-src-dup {
+  opacity: 1;
+  color: var(--color-level-warning, #ee9b3a);
+  border-color: var(--color-level-warning, #ee9b3a);
+}
+
+.spell-list-bridge ul.slb-rows li.slb-dup .slb-row-name {
+  font-style: italic;
+}
+
 .spell-list-bridge .slb-chip {
   font-size: var(--font-size-10, 10px);
   padding: 0 0.3rem;

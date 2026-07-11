@@ -41,9 +41,9 @@ export class SpellListEditor extends HandlebarsApplicationMixin(ApplicationV2) {
     this.searchTerm = "";
     /** @type {Map<string, EditorRow>} */
     this.rows = new Map();
-    for (const uuid of list.current ?? []) this.rows.set(uuid, { uuid, name: nameOf(uuid), status: "existing", removed: false });
+    for (const uuid of list.current ?? []) this.rows.set(uuid, makeRow(uuid, "existing"));
     for (const uuid of list.added ?? []) {
-      if (!this.rows.has(uuid)) this.rows.set(uuid, { uuid, name: nameOf(uuid), status: "planned", removed: false });
+      if (!this.rows.has(uuid)) this.rows.set(uuid, makeRow(uuid, "planned"));
     }
   }
 
@@ -77,11 +77,26 @@ export class SpellListEditor extends HandlebarsApplicationMixin(ApplicationV2) {
   async _prepareContext() {
     this.#searchPool ??= scanSourcePacks().then(scan => scan.spells);
     const pool = await this.#searchPool;
+    // The scan enriches pack indices with source fields — backfill rows that
+    // were built before it finished.
+    const poolByUuid = new Map(pool.map(s => [s.uuid, s]));
+    for (const row of this.rows.values()) {
+      if (!row.source) row.source = poolByUuid.get(row.uuid)?.source ?? sourceOf(row.uuid);
+    }
     const term = this.searchTerm.trim().toLowerCase();
     const results = term.length >= 2
       ? pool.filter(s => s.name.toLowerCase().includes(term) && !this.rows.has(s.uuid)).slice(0, 30)
       : [];
     const rows = [...this.rows.values()].sort((a, b) => a.name.localeCompare(b.name, game.i18n.lang));
+    // Same name appearing more than once (different printings) gets flagged so
+    // duplicates are visible at a glance.
+    const nameCounts = new Map();
+    for (const row of rows) {
+      if (row.removed) continue;
+      const key = row.name.toLowerCase();
+      nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+    }
+    for (const row of rows) row.isDup = !row.removed && (nameCounts.get(row.name.toLowerCase()) ?? 0) > 1;
     return {
       name: this.list.name,
       identifier: this.list.identifier,
@@ -137,7 +152,7 @@ export class SpellListEditor extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!uuid) return;
     const row = this.rows.get(uuid);
     if (row) row.removed = false;
-    else this.rows.set(uuid, { uuid, name: nameOf(uuid), status: "manual", removed: false });
+    else this.rows.set(uuid, makeRow(uuid, "manual"));
     this.render();
   }
 
@@ -170,6 +185,16 @@ export class SpellListEditor extends HandlebarsApplicationMixin(ApplicationV2) {
 }
 
 /**
+ * Build an editor row for a spell UUID.
+ * @param {string} uuid
+ * @param {"existing"|"planned"|"manual"} status
+ * @returns {EditorRow}
+ */
+function makeRow(uuid, status) {
+  return { uuid, name: nameOf(uuid), source: sourceOf(uuid), status, removed: false };
+}
+
+/**
  * Display name for a spell UUID (compendium indexes always carry names).
  * @param {string} uuid
  * @returns {string}
@@ -179,5 +204,24 @@ function nameOf(uuid) {
     return fromUuidSync(uuid)?.name ?? uuid.split(".").pop();
   } catch {
     return uuid.split(".").pop();
+  }
+}
+
+/**
+ * Human-readable origin for a spell UUID: 5etools source code or source book
+ * when the index carries it, otherwise the compendium's label.
+ * @param {string} uuid
+ * @returns {string}
+ */
+function sourceOf(uuid) {
+  try {
+    const doc = fromUuidSync(uuid);
+    const source = doc?.flags?.plutonium?.source ?? doc?.system?.source?.book;
+    if (source) return source;
+  } catch { /* fall through to pack label */ }
+  try {
+    return foundry.utils.parseUuid(uuid)?.collection?.metadata?.label ?? "";
+  } catch {
+    return "";
   }
 }
