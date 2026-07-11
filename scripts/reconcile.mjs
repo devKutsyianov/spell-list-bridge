@@ -180,7 +180,7 @@ export async function planReconcile({ identifiers } = {}) {
   /** Every spell UUID that ends up on (or is already on) any planned list. */
   const covered = new Set();
 
-  const makeAction = (listType, identifier, name, derived, classIdentifier) => {
+  const makeAction = (listType, identifier, name, derived, classIdentifier, source = "") => {
     const source = sourceLists.get(`${listType}:${identifier}`);
     const excludes = index.excludes.get(
       listType === "class" ? `class:${identifier}` : `subclass:${classIdentifier}/${identifier}`
@@ -207,6 +207,7 @@ export async function planReconcile({ identifiers } = {}) {
       identifier,
       classIdentifier,
       name,
+      source,
       pageId: existing?.id,
       pageUuid: existing?.uuid,
       added,
@@ -237,11 +238,11 @@ export async function planReconcile({ identifiers } = {}) {
       // left alone — dnd5e registers those pages natively. Casters with no list
       // at all become curation candidates for the editor window.
       if (target.progression !== "none" && !hasSourceList) {
-        plan.missing.push({ listType: "class", identifier, name: target.name, current: [], added: [] });
+        plan.missing.push({ listType: "class", identifier, name: target.name, source: target.source, current: [], added: [] });
       }
       continue;
     }
-    makeAction("class", identifier, target.name, derived ?? new Set());
+    makeAction("class", identifier, target.name, derived ?? new Set(), undefined, target.source);
   }
 
   // Subclass lists, only for classes actually present.
@@ -250,7 +251,7 @@ export async function planReconcile({ identifiers } = {}) {
     if (restrict && !restrict.has(classId)) continue;
     if (!targets.has(classId)) continue;
     const name = index.subclassNames.get(key) ?? subTargets.get(key)?.name ?? subclassId;
-    makeAction("subclass", subclassId, name, uuids, classId);
+    makeAction("subclass", subclassId, name, uuids, classId, subTargets.get(key)?.source ?? "");
   }
 
   // Subclasses present in the world (actor items / source packs) that ended up
@@ -266,6 +267,7 @@ export async function planReconcile({ identifiers } = {}) {
       identifier: target.identifier,
       classIdentifier: classId,
       name: target.name,
+      source: target.source,
       current: [],
       added: []
     });

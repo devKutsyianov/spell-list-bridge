@@ -1,6 +1,7 @@
 <section class="slb-editor-body">
   <p class="hint">
     <strong>{{name}}</strong> <code>{{identifier}}</code>
+    {{#if source}}<span class="slb-src" data-tooltip="{{source}}">{{source}}</span>{{/if}}
     {{#if isSubclass}}<span class="slb-parent">({{localize "TYPES.Item.subclass"}} — {{classIdentifier}})</span>{{/if}}
     {{#if isNew}}<span class="slb-new-badge">{{localize "spell-list-bridge.editor.newList"}}</span>{{/if}}
   </p>

@@ -20,7 +20,7 @@
       <tbody>
         {{#each rows}}
         <tr class="kind-{{kind}}" data-idx="{{idx}}">
-          <td>{{name}} <code>{{identifier}}</code></td>
+          <td>{{name}} <code>{{identifier}}</code>{{#if source}} <span class="slb-src" data-tooltip="{{source}}">{{source}}</span>{{/if}}</td>
           <td>{{#if isSubclass}}{{localize "TYPES.Item.subclass"}}{{else}}{{localize "TYPES.Item.class"}}{{/if}}</td>
           <td>{{kindLabel}}</td>
           <td class="num">{{addedCount}}</td>
@@ -46,6 +46,7 @@
       <li data-idx="{{idx}}">
         <span>{{name}} <code>{{identifier}}</code>
           {{#if isSubclass}}<em>({{classIdentifier}})</em>{{/if}}
+          {{#if source}}<span class="slb-src" data-tooltip="{{source}}">{{source}}</span>{{/if}}
         </span>
         <button type="button" data-action="createList">
           <i class="fa-solid fa-plus"></i> {{localize "spell-list-bridge.preview.createList"}}

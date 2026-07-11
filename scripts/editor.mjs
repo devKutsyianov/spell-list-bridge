@@ -100,6 +100,7 @@ export class SpellListEditor extends HandlebarsApplicationMixin(ApplicationV2) {
     return {
       name: this.list.name,
       identifier: this.list.identifier,
+      source: this.list.source,
       classIdentifier: this.list.classIdentifier,
       isSubclass: this.list.listType === "subclass",
       isNew: !(this.list.current?.length || this.list.added?.length),

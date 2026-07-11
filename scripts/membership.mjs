@@ -80,13 +80,15 @@ export async function scanSourcePacks() {
         scan.classes.push({
           identifier: entry.system?.identifier || toIdentifier(entry.name),
           name: entry.name,
-          progression: entry.system?.spellcasting?.progression ?? "none"
+          progression: entry.system?.spellcasting?.progression ?? "none",
+          source: entry.flags?.[PLUTONIUM_ID]?.source ?? entry.system?.source?.book ?? pack.metadata.label
         });
       } else if (entry.type === "subclass") {
         scan.subclasses.push({
           identifier: entry.system?.identifier || toIdentifier(entry.name),
           classIdentifier: entry.system?.classIdentifier ?? "",
-          name: entry.name
+          name: entry.name,
+          source: entry.flags?.[PLUTONIUM_ID]?.source ?? entry.system?.source?.book ?? pack.metadata.label
         });
       }
     }
@@ -318,8 +320,20 @@ export async function buildMembershipIndex({ overrides, scan } = {}) {
  * @property {string} identifier   Real `system.identifier` of the class item
  * @property {string} name         Display name
  * @property {string} progression  Spellcasting progression ("none" when non-caster)
+ * @property {string} source       Human-readable origin of the class item
  * @property {boolean} fromOverride  Whether this target exists only in the override JSON
  */
+
+/**
+ * Human-readable origin of an embedded actor item (class/subclass).
+ * @param {Item} item
+ * @returns {string}
+ */
+function itemSource(item) {
+  return item.flags?.plutonium?.source
+    ?? item.system?.source?.book
+    ?? game.i18n.localize(`${MODULE_ID}.editor.worldSource`);
+}
 
 /**
  * Collect target classes: embedded classes on world actors, class items in
@@ -336,27 +350,28 @@ export async function collectTargetClasses({ overrides, scan } = {}) {
 
   /** @type {Map<string, TargetClass>} */
   const targets = new Map();
-  const put = (identifier, name, progression, fromOverride = false) => {
+  const put = (identifier, name, progression, source = "", fromOverride = false) => {
     const existing = targets.get(identifier);
     if (existing) {
       // A real class item beats an override stub; a caster progression beats "none".
       if (existing.progression === "none" && progression !== "none") existing.progression = progression;
+      if (!existing.source && source) existing.source = source;
       existing.fromOverride &&= fromOverride;
       return;
     }
-    targets.set(identifier, { identifier, name, progression, fromOverride });
+    targets.set(identifier, { identifier, name, progression, source, fromOverride });
   };
 
   for (const actor of game.actors) {
     for (const cls of actor.itemTypes?.class ?? []) {
-      put(cls.identifier, cls.name, cls.system.spellcasting?.progression ?? "none");
+      put(cls.identifier, cls.name, cls.system.spellcasting?.progression ?? "none", itemSource(cls));
     }
   }
 
-  for (const cls of scan.classes) put(cls.identifier, cls.name, cls.progression);
+  for (const cls of scan.classes) put(cls.identifier, cls.name, cls.progression, cls.source);
 
   for (const classId of Object.keys(overrides)) {
-    put(classId, classId.titleCase?.() ?? classId, "none", true);
+    put(classId, classId.titleCase?.() ?? classId, "none", "", true);
   }
 
   return targets;
@@ -373,14 +388,19 @@ export async function collectTargetClasses({ overrides, scan } = {}) {
 export async function collectTargetSubclasses({ scan } = {}) {
   scan ??= await scanSourcePacks();
   const targets = new Map();
-  const put = (classId, subclassId, name) => {
+  const put = (classId, subclassId, name, source = "") => {
     if (!classId || !subclassId) return;
     const key = `${classId}/${subclassId}`;
-    if (!targets.has(key)) targets.set(key, { identifier: subclassId, classIdentifier: classId, name });
+    const existing = targets.get(key);
+    if (existing) {
+      if (!existing.source && source) existing.source = source;
+      return;
+    }
+    targets.set(key, { identifier: subclassId, classIdentifier: classId, name, source });
   };
   for (const actor of game.actors) {
-    for (const sc of actor.itemTypes?.subclass ?? []) put(sc.system.classIdentifier, sc.identifier, sc.name);
+    for (const sc of actor.itemTypes?.subclass ?? []) put(sc.system.classIdentifier, sc.identifier, sc.name, itemSource(sc));
   }
-  for (const sc of scan.subclasses) put(sc.classIdentifier, sc.identifier, sc.name);
+  for (const sc of scan.subclasses) put(sc.classIdentifier, sc.identifier, sc.name, sc.source);
   return targets;
 }
