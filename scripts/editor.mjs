@@ -185,13 +185,29 @@ export class SpellListEditor extends HandlebarsApplicationMixin(ApplicationV2) {
 }
 
 /**
- * Build an editor row for a spell UUID.
+ * Build an editor row for a spell UUID. Rows always get a source tag:
+ * source code/book → compendium label → "World item"; unresolvable UUIDs are
+ * tagged "missing" and flagged dead.
  * @param {string} uuid
  * @param {"existing"|"planned"|"manual"} status
  * @returns {EditorRow}
  */
 function makeRow(uuid, status) {
-  return { uuid, name: nameOf(uuid), source: sourceOf(uuid), status, removed: false };
+  let doc = null;
+  try {
+    doc = fromUuidSync(uuid);
+  } catch { /* dead reference */ }
+  if (!doc) {
+    return {
+      uuid,
+      name: uuid.split(".").pop(),
+      source: game.i18n.localize(`${MODULE_ID}.editor.deadSource`),
+      dead: true,
+      status,
+      removed: false
+    };
+  }
+  return { uuid, name: doc.name ?? uuid.split(".").pop(), source: sourceOf(uuid, doc), status, removed: false };
 }
 
 /**
@@ -209,19 +225,23 @@ function nameOf(uuid) {
 
 /**
  * Human-readable origin for a spell UUID: 5etools source code or source book
- * when the index carries it, otherwise the compendium's label.
+ * when known, then the compendium's label, then "World item" for documents
+ * living outside any pack.
  * @param {string} uuid
+ * @param {object} [doc]  Already-resolved document/index entry.
  * @returns {string}
  */
-function sourceOf(uuid) {
+function sourceOf(uuid, doc) {
   try {
-    const doc = fromUuidSync(uuid);
+    doc ??= fromUuidSync(uuid);
     const source = doc?.flags?.plutonium?.source ?? doc?.system?.source?.book;
     if (source) return source;
-  } catch { /* fall through to pack label */ }
+  } catch { /* fall through */ }
+  if (!uuid.startsWith("Compendium.")) return game.i18n.localize(`${MODULE_ID}.editor.worldSource`);
   try {
-    return foundry.utils.parseUuid(uuid)?.collection?.metadata?.label ?? "";
+    return foundry.utils.parseUuid(uuid)?.collection?.metadata?.label
+      ?? game.i18n.localize(`${MODULE_ID}.editor.worldSource`);
   } catch {
-    return "";
+    return game.i18n.localize(`${MODULE_ID}.editor.deadSource`);
   }
 }

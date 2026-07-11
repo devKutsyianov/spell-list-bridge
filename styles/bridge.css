@@ -164,6 +164,12 @@
   text-overflow: ellipsis;
 }
 
+.spell-list-bridge .slb-src-dead {
+  opacity: 1;
+  color: var(--color-level-error, #ce0707);
+  border-color: var(--color-level-error, #ce0707);
+}
+
 .spell-list-bridge .slb-src-dup {
   opacity: 1;
   color: var(--color-level-warning, #ee9b3a);

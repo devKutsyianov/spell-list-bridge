@@ -58,6 +58,8 @@
       "remove": "Remove (exclude)",
       "restore": "Restore",
       "save": "Save changes",
+      "worldSource": "World item",
+      "deadSource": "missing",
       "status": {
         "existing": "on page",
         "planned": "will be added",
