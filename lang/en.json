@@ -126,6 +126,7 @@
       "noSpellBook": "Spell Book is not active — spellsNotInLists is unavailable.",
       "noReport": "Spell List Bridge: no reconcile report available yet.",
       "hiddenSources": "{count} source list(s) hidden in Spell Book.",
+      "assignmentsRepaired": "Spell List Bridge: repaired {repaired} stale spell-list assignment(s); {dropped} could not be matched and were cleared.",
       "pruneNothing": "Spell List Bridge: no dead references found — nothing to prune.",
       "pruneDone": "Spell List Bridge: pruned {removed} dead reference(s) from {lists} list(s); {pages} empty page(s) deleted."
     }

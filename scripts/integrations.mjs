@@ -1,7 +1,16 @@
 /** @file Soft-detection of and interoperation with Plutonium and Spell Book. */
 
-import { MODULE_ID, PLUTONIUM_ID, PLUTONIUM_LOOKUP_PATH, SB, SPELLBOOK_ID } from "./constants.mjs";
+import { MODULE_ID, PACK_ID, PAGE_FLAGS, PLUTONIUM_ID, PLUTONIUM_LOOKUP_PATH, SB, SPELLBOOK_ID } from "./constants.mjs";
 import { log } from "./util.mjs";
+
+/**
+ * Normalize a Spell Book class-rules list value to an array.
+ * @param {string[]|string|undefined} value
+ * @returns {string[]}
+ */
+function toArray(value) {
+  return Array.isArray(value) ? value : value ? [value] : [];
+}
 
 /** @returns {boolean} Whether Plutonium is installed and active. */
 export function isPlutoniumActive() {
@@ -97,7 +106,7 @@ export async function assignListToActors(classIdentifier, pageUuid, subclassIden
     try {
       const rules = foundry.utils.deepClone(actor.getFlag(SPELLBOOK_ID, SB.FLAG_CLASS_RULES) ?? {});
       const classRules = rules[classIdentifier] ?? {};
-      const current = Array.isArray(classRules[key]) ? classRules[key] : classRules[key] ? [classRules[key]] : [];
+      const current = toArray(classRules[key]);
       if (current.length) continue; // Never clobber an explicit choice.
       classRules[key] = [pageUuid];
       rules[classIdentifier] = classRules;
@@ -108,6 +117,99 @@ export async function assignListToActors(classIdentifier, pageUuid, subclassIden
     }
   }
   return assigned;
+}
+
+/**
+ * Repair actor class-rule assignments that point at generated pages which no
+ * longer exist — e.g. the pack's journal was recreated, so every actor still
+ * referencing the old journal id resolves to nothing and Spell Book shows an
+ * empty tab (blaming disabled Compendium Browser sources).
+ *
+ * Only UUIDs inside this module's own pack are touched: a dead one is
+ * repointed to the current page for the same class/subclass identifier, or
+ * dropped when no replacement exists (so Spell Book reports "no list assigned"
+ * truthfully instead of showing an empty list). Foreign lists are never
+ * modified.
+ * @param {JournalEntryPage[]} pages  Live generated pages.
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun=false]  Report without writing.
+ * @returns {Promise<{repaired: object[], dropped: object[]}>} What was (or would be) changed.
+ */
+export async function healActorAssignments(pages, { dryRun = false } = {}) {
+  const result = { repaired: [], dropped: [] };
+  if (!isSpellBookActive()) return result;
+
+  const ourPrefix = `Compendium.${PACK_ID}.`;
+  const live = new Set();
+  /** @type {Map<string, string>} classIdentifier → page uuid */
+  const byClass = new Map();
+  /** @type {Map<string, string>} `${classId}/${subclassId}` → page uuid */
+  const bySubclass = new Map();
+  for (const page of pages) {
+    live.add(page.uuid);
+    if (page.system.type === "class") byClass.set(page.system.identifier, page.uuid);
+    else if (page.system.type === "subclass") {
+      const classId = page.getFlag(MODULE_ID, PAGE_FLAGS.CLASS_IDENTIFIER);
+      if (classId) bySubclass.set(`${classId}/${page.system.identifier}`, page.uuid);
+    }
+  }
+
+  for (const actor of game.actors) {
+    const stored = actor.getFlag(SPELLBOOK_ID, SB.FLAG_CLASS_RULES);
+    if (!stored || !Object.keys(stored).length) continue;
+    const rules = foundry.utils.deepClone(stored);
+    let changed = false;
+
+    for (const [classId, config] of Object.entries(rules)) {
+      if (!config || typeof config !== "object") continue;
+      for (const key of ["customSpellList", "customSubclassSpellList"]) {
+        const current = toArray(config[key]);
+        if (!current.length) continue;
+        const next = [];
+        for (const uuid of current) {
+          // Keep anything that is not ours, and anything still alive.
+          if (!uuid.startsWith(ourPrefix) || live.has(uuid)) {
+            next.push(uuid);
+            continue;
+          }
+          let replacement = null;
+          if (key === "customSpellList") {
+            replacement = byClass.get(classId) ?? null;
+          } else {
+            // Pick the generated page of a subclass this actor actually has.
+            for (const sc of actor.itemTypes?.subclass ?? []) {
+              if (sc.system?.classIdentifier !== classId) continue;
+              const candidate = bySubclass.get(`${classId}/${sc.identifier}`);
+              if (candidate) {
+                replacement = candidate;
+                break;
+              }
+            }
+          }
+          changed = true;
+          if (replacement) {
+            if (!next.includes(replacement)) next.push(replacement);
+            result.repaired.push({ actor: actor.name, classIdentifier: classId, key, from: uuid, to: replacement });
+          } else {
+            result.dropped.push({ actor: actor.name, classIdentifier: classId, key, from: uuid });
+          }
+        }
+        config[key] = next;
+      }
+    }
+
+    if (!changed || dryRun) continue;
+    try {
+      await actor.setFlag(SPELLBOOK_ID, SB.FLAG_CLASS_RULES, rules);
+    } catch (err) {
+      log(`Failed to repair assignments on actor ${actor.name}`, err);
+    }
+  }
+
+  if (result.repaired.length || result.dropped.length) {
+    log(`Assignment repair${dryRun ? " (dry run)" : ""}: ${result.repaired.length} repointed, ${result.dropped.length} dropped`, result);
+  }
+  return result;
 }
 
 /**

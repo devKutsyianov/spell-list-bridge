@@ -1,7 +1,7 @@
 /** @file The idempotent reconcile engine: plan → (preview) → apply. */
 
 import { JOURNAL_NAME, MODULE_ID, PACK_ID, PAGE_FLAGS, SETTINGS } from "./constants.mjs";
-import { assignListToActors, ensureSpellBookRegistryToggle, hideSourceListsInSpellBook, isSpellBookActive } from "./integrations.mjs";
+import { assignListToActors, ensureSpellBookRegistryToggle, healActorAssignments, hideSourceListsInSpellBook, isSpellBookActive } from "./integrations.mjs";
 import { buildMembershipIndex, collectTargetClasses, collectTargetSubclasses, loadOverrides, scanSourcePacks } from "./membership.mjs";
 import { chunk, log } from "./util.mjs";
 
@@ -95,6 +95,33 @@ async function getPack({ unlock = false } = {}) {
 async function getJournal(pack) {
   const docs = await pack.getDocuments();
   return docs.find(j => j.getFlag(MODULE_ID, PAGE_FLAGS.GENERATED)) ?? docs[0] ?? null;
+}
+
+/**
+ * All live generated pages in the module's pack.
+ * @returns {Promise<JournalEntryPage[]>}
+ */
+async function generatedPages() {
+  const pack = game.packs.get(PACK_ID);
+  if (!pack) return [];
+  const journal = await getJournal(pack);
+  return [...(journal?.pages ?? [])].filter(isGeneratedPage);
+}
+
+/**
+ * Repair stale Spell Book assignments across every actor, independently of a
+ * sync. Serialized on the same chain as apply.
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun=false]
+ * @returns {Promise<{repaired: object[], dropped: object[]}>}
+ */
+export function repairAssignments({ dryRun = false } = {}) {
+  const run = _applyChain.then(async () => {
+    if (!game.user.isGM) throw new Error(`${MODULE_ID}: assignment repair is GM-only`);
+    return healActorAssignments(await generatedPages(), { dryRun });
+  });
+  _applyChain = run.catch(() => {});
+  return run;
 }
 
 /** Cache for scanSourceLists — foreign journal packs rarely change mid-session. */
@@ -332,7 +359,7 @@ async function _applyPlan(plan, { dryRun = false, onProgress } = {}) {
     unmapped: plan.unmapped,
     unresolvedOverrides: plan.unresolvedOverrides,
     warnings: [...plan.warnings],
-    spellBook: { registryToggled: 0, hiddenSources: 0, assignedActors: {} }
+    spellBook: { registryToggled: 0, hiddenSources: 0, assignedActors: {}, repairedAssignments: [], droppedAssignments: [] }
   };
 
   const entryFor = (a, added, total, removed = 0) => ({ identifier: a.identifier, type: a.listType, name: a.name, added, removed, total });
@@ -341,34 +368,36 @@ async function _applyPlan(plan, { dryRun = false, onProgress } = {}) {
     if (a.kind === "unchanged") report.unchanged.push(entryFor(a, 0, a.total));
   }
 
+  const actionable = plan.actions.filter(a => a.kind !== "unchanged");
+
   if (dryRun) {
     // A dry run reports the plan's prediction — it is labeled as such.
     for (const a of plan.actions) {
       if (a.kind === "unchanged") continue;
       report[a.kind === "create" ? "created" : "updated"].push(entryFor(a, a.added.length, a.total, a.removed?.length ?? 0));
     }
+    const pages = await generatedPages();
+    const heal = await healActorAssignments(pages, { dryRun: true });
+    report.spellBook.repairedAssignments = heal.repaired;
+    report.spellBook.droppedAssignments = heal.dropped;
     log("Dry run — no writes performed", report);
     await setLastReport(report);
     return report;
   }
 
-  const actionable = plan.actions.filter(a => a.kind !== "unchanged");
-  if (!actionable.length) {
-    await setLastReport(report);
-    return report;
-  }
-
-  const pack = await getPack({ unlock: true });
+  const pack = await getPack({ unlock: !!actionable.length });
   let journal = await getJournal(pack);
-  journal ??= await JournalEntry.create(
-    { name: JOURNAL_NAME, flags: { [MODULE_ID]: { [PAGE_FLAGS.GENERATED]: true } } },
-    { pack: pack.collection }
-  );
+  if (actionable.length) {
+    journal ??= await JournalEntry.create(
+      { name: JOURNAL_NAME, flags: { [MODULE_ID]: { [PAGE_FLAGS.GENERATED]: true } } },
+      { pack: pack.collection }
+    );
+  }
 
   // Revalidate every action against the pack's CURRENT pages: a page created
   // since planning turns a stale "create" into an update or a no-op.
   const currentPages = new Map();
-  for (const page of journal.pages) {
+  for (const page of journal?.pages ?? []) {
     if (isGeneratedPage(page)) currentPages.set(pageListKey(page), page);
   }
 
@@ -424,6 +453,7 @@ async function _applyPlan(plan, { dryRun = false, onProgress } = {}) {
   // Report entries are pushed only after their batch commits, so a failure
   // mid-apply leaves the report reflecting exactly what was written.
   try {
+    if (totalOps && !journal) throw new Error("generated-lists journal is unavailable");
     for (const batch of chunk(creates, batchSize)) {
       await journal.createEmbeddedDocuments("JournalEntryPage", batch.map(b => b.data));
       for (const b of batch) {
@@ -452,8 +482,24 @@ async function _applyPlan(plan, { dryRun = false, onProgress } = {}) {
   const touched = [...(journal?.pages ?? [])].filter(isGeneratedPage);
   await registerPages(touched, report);
 
-  // Spell Book interop: registry toggle + optional actor assignment + optional source hiding.
+  // Spell Book interop: registry toggle + assignment repair + optional
+  // assignment + optional source hiding.
   report.spellBook.registryToggled = await ensureSpellBookRegistryToggle(touched.map(p => p.uuid));
+
+  // Repair before assigning: actors pointing at pages from a previous journal
+  // are repointed, and unrepairable references dropped so the assignment pass
+  // below can fill them.
+  const heal = await healActorAssignments(touched);
+  report.spellBook.repairedAssignments = heal.repaired;
+  report.spellBook.droppedAssignments = heal.dropped;
+  if (heal.repaired.length || heal.dropped.length) {
+    ui.notifications.info(
+      game.i18n.format(`${MODULE_ID}.notify.assignmentsRepaired`, {
+        repaired: heal.repaired.length,
+        dropped: heal.dropped.length
+      })
+    );
+  }
 
   if (isSpellBookActive() && game.settings.get(MODULE_ID, SETTINGS.ASSIGN_TO_ACTORS)) {
     for (const page of touched) {

@@ -158,6 +158,24 @@ with `api.exportReport()` when filing issues.
 6. **Idempotency**: run Sync again immediately — every action should read
    **Unchanged**.
 
+## Self-healing assignments
+
+If the generated-lists journal is ever recreated (pack rebuilt, module
+reinstalled, compendium cleared), every actor still pointing at the old
+journal's pages resolves to nothing — Spell Book then shows an empty class tab
+with a misleading "sources disabled in the Compendium Browser" hint (it assumes
+that cause without checking it).
+
+Every Apply now repairs this automatically: assignments referencing dead pages
+**of this module's own pack** are repointed to the current page for the same
+class/subclass identifier, and cleared when no match exists (so Spell Book
+reports "no list assigned" truthfully). Foreign lists are never touched. Run it
+on its own with:
+
+```js
+await game.modules.get("spell-list-bridge").api.repair({ dryRun: true });
+```
+
 ## Known limitations
 
 - **Auto-sync trigger scope**: compendium imports fire hooks only on the client

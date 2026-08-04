@@ -4,7 +4,7 @@ import { MODULE_ID } from "./constants.mjs";
 import { spellsNotInLists } from "./integrations.mjs";
 import { buildMembershipIndex } from "./membership.mjs";
 import { ReconcilePreview } from "./preview.mjs";
-import { applyPlan, getLastReport, planReconcile, pruneDeadReferences } from "./reconcile.mjs";
+import { applyPlan, getLastReport, planReconcile, pruneDeadReferences, repairAssignments } from "./reconcile.mjs";
 import { exportJson, requireGM } from "./util.mjs";
 
 /**
@@ -64,10 +64,30 @@ async function prune({ dryRun = false } = {}) {
   return pruneDeadReferences({ dryRun });
 }
 
+/**
+ * Repair actor spell-list assignments pointing at generated pages that no
+ * longer exist (e.g. after the pack's journal was recreated).
+ * @param {object} [options]
+ * @param {boolean} [options.dryRun=false]
+ * @returns {Promise<object|void>} `{repaired, dropped}`.
+ */
+async function repair({ dryRun = false } = {}) {
+  if (!requireGM()) return;
+  const result = await repairAssignments({ dryRun });
+  ui.notifications.info(
+    game.i18n.format(`${MODULE_ID}.notify.assignmentsRepaired`, {
+      repaired: result.repaired.length,
+      dropped: result.dropped.length
+    })
+  );
+  return result;
+}
+
 /** Attach the API to the module. */
 export function createApi() {
   game.modules.get(MODULE_ID).api = {
     reconcile,
+    repair,
     prune,
     reportUnmapped,
     spellsNotInLists,
